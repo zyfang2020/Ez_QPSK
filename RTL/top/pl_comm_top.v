@@ -85,7 +85,7 @@ wire pkt_valid;
 wire pkt_ready;
 wire pkt_last;
 
-localparam [23:0] QPSK_PHASE_INC_DEFAULT = 24'h180000;
+localparam [23:0] QPSK_PHASE_INC_DEFAULT = 24'h133333;
 
 // 各时钟域复位同步
 reset_sync u_reset_sync_adc (

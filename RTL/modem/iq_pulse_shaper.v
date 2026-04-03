@@ -53,21 +53,20 @@ reg [5:0] phase_idx; // 0..49
 reg signed [W-1:0] hist_i [0:SYM_TAPS-1];
 reg signed [W-1:0] hist_q [0:SYM_TAPS-1];
 
-reg signed [ACC_W-1:0] acc_i;
-reg signed [ACC_W-1:0] acc_q;
-reg signed [ACC_W-1:0] prod_i [0:SYM_TAPS-1];
-reg signed [ACC_W-1:0] prod_q [0:SYM_TAPS-1];
-reg signed [ACC_W-1:0] sum_l1_i [0:4];
-reg signed [ACC_W-1:0] sum_l1_q [0:4];
-reg signed [ACC_W-1:0] sum_l2_i [0:2];
-reg signed [ACC_W-1:0] sum_l2_q [0:2];
-reg signed [ACC_W-1:0] sum_l3_i;
-reg signed [ACC_W-1:0] sum_l3_q;
+reg signed [ACC_W-1:0] s1_prod_i [0:SYM_TAPS-1];
+reg signed [ACC_W-1:0] s1_prod_q [0:SYM_TAPS-1];
+reg signed [ACC_W-1:0] s2_l2_i [0:2];
+reg signed [ACC_W-1:0] s2_l2_q [0:2];
+reg                    s1_valid;
+reg                    s2_valid;
 reg signed [W-1:0] sym_i_k;
 reg signed [W-1:0] sym_q_k;
 reg signed [COEF_W-1:0] coef_k;
 
-wire advance;
+wire s3_accept;
+wire s2_accept;
+wire s1_accept;
+wire launch_sample;
 wire need_symbol;
 wire [1:0] beta_sel;
 
@@ -75,9 +74,12 @@ assign beta_sel = (cfg_rrc_beta_sel == 2'd3) ?
                   ((RRC_BETA_SEL == 0) ? 2'd0 :
                    (RRC_BETA_SEL == 1) ? 2'd1 : 2'd2) :
                   cfg_rrc_beta_sel;
-assign advance = (!m_valid) || m_ready;
+assign s3_accept = (!m_valid) || m_ready;
+assign s2_accept = (!s2_valid) || s3_accept;
+assign s1_accept = (!s1_valid) || s2_accept;
 assign need_symbol = (phase_idx == 6'd0);
-assign s_ready = advance && need_symbol;
+assign launch_sample = s1_accept && (!need_symbol || s_valid);
+assign s_ready = s1_accept && need_symbol;
 
 generate
     if (SPS != 50) begin : g_sps_not_supported
@@ -2236,62 +2238,68 @@ always @(posedge clk or negedge rst_n) begin
         m_i       <= {W{1'b0}};
         m_q       <= {W{1'b0}};
         m_valid   <= 1'b0;
+        s1_valid  <= 1'b0;
+        s2_valid  <= 1'b0;
         for (n = 0; n < SYM_TAPS; n = n + 1) begin
             hist_i[n] <= {W{1'b0}};
             hist_q[n] <= {W{1'b0}};
         end
-    end else if (advance) begin
-        if (need_symbol && !s_valid) begin
-            m_valid <= 1'b0;
-        end else begin
-            for (k = 0; k < SYM_TAPS; k = k + 1) begin
-                coef_k = rrc_coef_q14(beta_sel, phase_idx, k[3:0]);
-                if (need_symbol) begin
-                    if (k == 0) begin
-                        sym_i_k = s_i;
-                        sym_q_k = s_q;
-                    end else begin
-                        sym_i_k = hist_i[k-1];
-                        sym_q_k = hist_q[k-1];
-                    end
-                end else begin
-                    sym_i_k = hist_i[k];
-                    sym_q_k = hist_q[k];
-                end
-                prod_i[k] = $signed(sym_i_k) * $signed(coef_k);
-                prod_q[k] = $signed(sym_q_k) * $signed(coef_k);
+    end else begin
+        // stage3: 最终求和 + 四舍五入 + 输出寄存
+        if (s3_accept) begin
+            if (s2_valid) begin
+                m_i <= round_shift_q14((s2_l2_i[0] + s2_l2_i[1]) + s2_l2_i[2]);
+                m_q <= round_shift_q14((s2_l2_q[0] + s2_l2_q[1]) + s2_l2_q[2]);
+                m_valid <= 1'b1;
+            end else begin
+                m_valid <= 1'b0;
             end
+        end
 
-            // 平衡加法树替代串行累加，缩短组合路径
-            sum_l1_i[0] = prod_i[0] + prod_i[1];
-            sum_l1_i[1] = prod_i[2] + prod_i[3];
-            sum_l1_i[2] = prod_i[4] + prod_i[5];
-            sum_l1_i[3] = prod_i[6] + prod_i[7];
-            sum_l1_i[4] = prod_i[8];
+        // stage2: 加法树中间级寄存
+        if (s2_accept) begin
+            if (s1_valid) begin
+                s2_l2_i[0] <= (s1_prod_i[0] + s1_prod_i[1]) + (s1_prod_i[2] + s1_prod_i[3]);
+                s2_l2_i[1] <= (s1_prod_i[4] + s1_prod_i[5]) + (s1_prod_i[6] + s1_prod_i[7]);
+                s2_l2_i[2] <= s1_prod_i[8];
 
-            sum_l1_q[0] = prod_q[0] + prod_q[1];
-            sum_l1_q[1] = prod_q[2] + prod_q[3];
-            sum_l1_q[2] = prod_q[4] + prod_q[5];
-            sum_l1_q[3] = prod_q[6] + prod_q[7];
-            sum_l1_q[4] = prod_q[8];
+                s2_l2_q[0] <= (s1_prod_q[0] + s1_prod_q[1]) + (s1_prod_q[2] + s1_prod_q[3]);
+                s2_l2_q[1] <= (s1_prod_q[4] + s1_prod_q[5]) + (s1_prod_q[6] + s1_prod_q[7]);
+                s2_l2_q[2] <= s1_prod_q[8];
+                s2_valid <= 1'b1;
+            end else begin
+                s2_valid <= 1'b0;
+            end
+        end
 
-            sum_l2_i[0] = sum_l1_i[0] + sum_l1_i[1];
-            sum_l2_i[1] = sum_l1_i[2] + sum_l1_i[3];
-            sum_l2_i[2] = sum_l1_i[4];
+        // stage1: 系数查找 + 9 路乘法寄存
+        if (s1_accept) begin
+            if (launch_sample) begin
+                for (k = 0; k < SYM_TAPS; k = k + 1) begin
+                    coef_k = rrc_coef_q14(beta_sel, phase_idx, k[3:0]);
+                    if (need_symbol) begin
+                        if (k == 0) begin
+                            sym_i_k = s_i;
+                            sym_q_k = s_q;
+                        end else begin
+                            sym_i_k = hist_i[k-1];
+                            sym_q_k = hist_q[k-1];
+                        end
+                    end else begin
+                        sym_i_k = hist_i[k];
+                        sym_q_k = hist_q[k];
+                    end
+                    s1_prod_i[k] <= $signed(sym_i_k) * $signed(coef_k);
+                    s1_prod_q[k] <= $signed(sym_q_k) * $signed(coef_k);
+                end
+                s1_valid <= 1'b1;
+            end else begin
+                s1_valid <= 1'b0;
+            end
+        end
 
-            sum_l2_q[0] = sum_l1_q[0] + sum_l1_q[1];
-            sum_l2_q[1] = sum_l1_q[2] + sum_l1_q[3];
-            sum_l2_q[2] = sum_l1_q[4];
-
-            sum_l3_i = sum_l2_i[0] + sum_l2_i[1];
-            sum_l3_q = sum_l2_q[0] + sum_l2_q[1];
-
-            acc_i = sum_l3_i + sum_l2_i[2];
-            acc_q = sum_l3_q + sum_l2_q[2];
-
-            m_i <= round_shift_q14(acc_i);
-            m_q <= round_shift_q14(acc_q);
-            m_valid <= 1'b1;
+        // 仅在成功发起一个新样本计算时推进相位/历史符号
+        if (launch_sample) begin
             if (phase_idx == 6'd49) begin
                 phase_idx <= 6'd0;
             end else begin

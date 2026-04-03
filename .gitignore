@@ -5,6 +5,7 @@
 *.runs/
 *.sim/
 .Xil/
+*.xpr
 
 # ---- Generic tool/runtime outputs ----
 *.jou
@@ -56,8 +57,7 @@ Thumbs.db
 
 # ---- Keep source assets ----
 !RTL/**
-!sim/**
-!constraints/**
+!Sim/**
+!Constraints/**
 !Tool/**
-!readme.md
-!*.xpr
+!README.md
