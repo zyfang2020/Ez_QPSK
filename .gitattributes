@@ -1,0 +1,16 @@
+* text=auto
+
+# HDL / constraints / scripts as LF text
+*.v text eol=lf
+*.vh text eol=lf
+*.sv text eol=lf
+*.xdc text eol=lf
+*.tcl text eol=lf
+*.md text eol=lf
+
+# Vivado generated binaries: no text diff/merge
+*.dcp binary
+*.bit binary
+*.bin binary
+*.mcs binary
+*.ltx binary

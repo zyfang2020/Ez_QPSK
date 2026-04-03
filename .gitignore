@@ -1,0 +1,63 @@
+# ---- Vivado generated project artifacts ----
+*.cache/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+.Xil/
+
+# ---- Generic tool/runtime outputs ----
+*.jou
+*.log
+*.pb
+*.str
+*.wdb
+*.wdf
+*.wpc
+*.wdm
+*.rlx
+*.rtti
+*.dbg
+*.mem
+*.backup.jou
+*.backup.log
+*.tmp
+
+# ---- Simulation-generated files ----
+xsim.dir/
+webtalk*.jou
+webtalk*.log
+webtalk_pa.xml
+xvlog.log
+xvlog.pb
+xelab.pb
+simulate.log
+compile.bat
+elaborate.bat
+simulate.bat
+glbl.v
+*.prj
+*.ini.bak
+TempBreakPointFile.txt
+Compile_Options.txt
+*.csv
+
+# ---- Common implementation bitstreams/reports (optional keep in releases) ----
+*.bit
+*.bin
+*.mcs
+*.ltx
+*.dcp
+
+# ---- Editor / OS noise ----
+.DS_Store
+Thumbs.db
+*~
+
+# ---- Keep source assets ----
+!RTL/**
+!sim/**
+!constraints/**
+!Tool/**
+!readme.md
+!*.xpr
