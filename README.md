@@ -90,6 +90,15 @@
 - `qpsk_sym_*` 为后续协议化输入预留接口，当前主要使用内部 `qpsk_test_gen`。
 - RX 侧 AXIS 口通常在 Vivado BD 内连接 DMA，不作为外部引脚导出。
 
+### 2.7 本机 Vivado 命令行路径（Windows）
+
+- Vivado 安装路径（已确认）：
+  - `D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat`
+- 在工程根目录批处理运行单 DAC TX 仿真（不打开 GUI）：
+  - `D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat -mode batch -source scripts/run_qpsk_tx_single_dac_sim.tcl`
+- PowerShell 等价命令：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_tx_single_dac_sim.tcl`
+
 ## 3. 规范与标准
 
 ### 3.1 目录规范

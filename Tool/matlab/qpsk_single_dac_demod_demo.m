@@ -4,10 +4,24 @@
 clear; clc;
 
 % ===== 参数（与 tb_qpsk_tx_single_dac_min.v 保持一致） =====
-csv_file  = 'qpsk_single_dac_samples.csv';
+csv_candidates = {
+    '../../Ez_QPSK.sim/sim_1/behav/xsim/qpsk_single_dac_samples_gray.csv'
+    '../../Ez_QPSK.sim/sim_1/behav/xsim/qpsk_single_dac_samples.csv'
+};
+csv_file = '';
+for k = 1:numel(csv_candidates)
+    if isfile(csv_candidates{k})
+        csv_file = csv_candidates{k};
+        break;
+    end
+end
+if isempty(csv_file)
+    error('CSV 未找到，请检查 xsim 输出目录。');
+end
 DAC_DW    = 12;
 PHASE_INC = hex2dec('180000');
 SPS       = 50;
+SKIP_SAMPLES = 300; % 跳过起始过渡段样点数，可按需要调整
 
 % ===== 读数据 =====
 m = readmatrix(csv_file);
@@ -15,6 +29,11 @@ if size(m,2) < 2
     error('CSV 列数不足，期望两列: idx,dac_u12');
 end
 u = m(:,2);  % unsigned offset-binary code
+
+if length(u) <= SKIP_SAMPLES
+    error('样本数(%d) <= SKIP_SAMPLES(%d)，请减小 SKIP_SAMPLES。', length(u), SKIP_SAMPLES);
+end
+u = u(SKIP_SAMPLES+1:end);
 
 % ===== offset-binary -> signed (two''s complement value) =====
 offset = 2^(DAC_DW-1);
@@ -58,6 +77,6 @@ plot(I, Q, '.'); axis equal; grid on;
 title('Constellation after DDC + integrate');
 xlabel('I'); ylabel('Q');
 
-fprintf('Loaded %d samples, recovered %d symbols.\\n', length(x), length(sym));
+fprintf('Loaded %d samples (after skip %d), recovered %d symbols.\\n', length(x), SKIP_SAMPLES, length(sym));
 fprintf('First 8 decided bits [I<0, Q<0]:\\n');
 disp(sym_bits(1:min(8,end),:));

@@ -10,11 +10,11 @@
 module tb_qpsk_tx_single_dac_min;
 
 localparam integer DAC_DW        = 12;
-localparam integer TARGET_ACCEPT = 5000;
+localparam integer TARGET_ACCEPT = 50000;
 localparam [23:0]  PHASE_INC     = 24'h180000;
 localparam [1:0]   RRC_BETA_SEL  = 2'd2; // 0:0.20, 1:0.35, 2:0.50
 localparam integer DUMP_EN       = 1;
-localparam [255:0] DUMP_FILE     = "qpsk_single_dac_samples.csv";
+localparam [255:0] DUMP_FILE     = "qpsk_single_dac_samples_gray.csv";
 
 reg                  clk;
 reg                  rst_n;
@@ -186,7 +186,7 @@ initial begin
 
     rst_n          = 1'b0;
     gen_en         = 1'b0;
-    gen_mode_sel   = 2'd1; // PRBS
+    gen_mode_sel   = 2'd0; // Gray 循环: 00->01->11->10
     gen_cfg_sym    = 2'b00;
     tx_ready       = 1'b0;
     ready_cycle_cnt = 0;
