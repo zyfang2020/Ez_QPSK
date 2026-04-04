@@ -11,9 +11,11 @@ module qpsk_tx_single_dac #(
     parameter integer DAC_DW = 12,
     parameter integer SYM_W = 12,
     parameter integer MIX_W = 18,
+    parameter integer GAIN_W = 22,
     parameter integer PHASE_W = 24,
     parameter integer SHAPER_SPS = 50,
-    parameter integer SHAPER_BETA_SEL = 2 // 0:0.20, 1:0.35, 2:0.50
+    parameter integer SHAPER_BETA_SEL = 2, // 0:0.20, 1:0.35, 2:0.50
+    parameter integer TX_GAIN_NUM = 6
 ) (
     input  wire                      clk,
     input  wire                      rst_n,
@@ -38,6 +40,7 @@ wire                    shp_valid;
 wire                    shp_ready;
 
 wire signed [MIX_W-1:0] mix_data;
+wire signed [GAIN_W-1:0] mix_data_gain;
 wire                    mix_valid;
 wire                    mix_ready;
 
@@ -92,13 +95,15 @@ iq_nco_upconverter #(
     .m_ready(mix_ready)
 );
 
+assign mix_data_gain = $signed(mix_data) * $signed(TX_GAIN_NUM);
+
 signed_to_offset_dac #(
-    .IN_W(MIX_W),
+    .IN_W(GAIN_W),
     .DAC_DW(DAC_DW)
 ) u_signed_to_offset_dac (
     .clk(clk),
     .rst_n(rst_n),
-    .s_data(mix_data),
+    .s_data(mix_data_gain),
     .s_valid(mix_valid),
     .s_ready(mix_ready),
     .m_data(m_data),

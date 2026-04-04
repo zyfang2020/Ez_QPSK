@@ -70,9 +70,11 @@ qpsk_tx_single_dac #(
     .DAC_DW(DAC_DW),
     .SYM_W(12),
     .MIX_W(18),
+    .GAIN_W(22),
     .PHASE_W(24),
     .SHAPER_SPS(50),
-    .SHAPER_BETA_SEL(RRC_BETA_SEL)
+    .SHAPER_BETA_SEL(RRC_BETA_SEL),
+    .TX_GAIN_NUM(6)
 ) u_qpsk_tx_single_dac (
     .clk(clk),
     .rst_n(rst_n),
@@ -144,6 +146,7 @@ always @(posedge clk or negedge rst_n) begin
             end
 
             if (DUMP_EN && (dump_fd != 0)) begin
+                // 这里导出的是发射链输出 tx_data（与 dac_data 在下一拍对齐）
                 $fwrite(dump_fd, "%0d,%0d\n", dump_wr_cnt, tx_data);
                 dump_wr_cnt <= dump_wr_cnt + 1;
             end
@@ -178,12 +181,12 @@ initial begin
         if (dump_fd == 0) begin
             tb_fail("DAC 导出文件打开失败");
         end
-        $fwrite(dump_fd, "idx,dac_u12\n");
+        $fwrite(dump_fd, "idx,tx_u12\n");
     end
 
     rst_n          = 1'b0;
     gen_en         = 1'b0;
-    gen_mode_sel   = 2'd0; // 循环Gray码
+    gen_mode_sel   = 2'd1; // PRBS
     gen_cfg_sym    = 2'b00;
     tx_ready       = 1'b0;
     ready_cycle_cnt = 0;

@@ -143,9 +143,11 @@ qpsk_tx_single_dac #(
     .DAC_DW(DAC_DW),
     .SYM_W(12),
     .MIX_W(18),
+    .GAIN_W(22),
     .PHASE_W(24),
     .SHAPER_SPS(50),
-    .SHAPER_BETA_SEL(2)
+    .SHAPER_BETA_SEL(2),
+    .TX_GAIN_NUM(6)
 ) u_qpsk_tx_single_dac (
     .clk(clk_dac),
     .rst_n(rst_n_dac),

@@ -45,6 +45,7 @@ module iq_pulse_shaper #(
 localparam integer COEF_W = 16;
 localparam integer COEF_Q = 14;
 localparam integer SYM_TAPS = 9; // span=8 -> 9 个符号抽头
+// ACC_W 的计算：W（输入符号宽度） + COEF_W（RCC系数宽度） + 5（tap数量位宽裕量log2(SYM_TAPS)）
 localparam integer ACC_W = W + COEF_W + 5;
 
 integer n;
