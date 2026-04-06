@@ -19,7 +19,7 @@ if isempty(csv_file)
     error('CSV 未找到，请检查 xsim 输出目录。');
 end
 DAC_DW    = 12;
-PHASE_INC = hex2dec('180000');
+PHASE_INC = hex2dec('133333');
 SPS       = 50;
 SKIP_SAMPLES = 300; % 跳过起始过渡段样点数，可按需要调整
 

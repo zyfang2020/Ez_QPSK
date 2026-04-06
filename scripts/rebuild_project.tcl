@@ -70,18 +70,32 @@ if {[llength $rtl_abs] == 0} {
 add_files -norecurse $rtl_abs
 
 # Constraints.
-set xdc_files [glob -nocomplain -directory [file join $repo_root constraints] -types f *.xdc]
+set constr_dir [file join $repo_root "Constraints"]
+if {![file isdirectory $constr_dir]} {
+    # Fallback for case-insensitive/legacy layouts.
+    set constr_dir [file join $repo_root "constraints"]
+}
+set xdc_files [glob -nocomplain -directory $constr_dir -types f *.xdc]
 if {[llength $xdc_files] > 0} {
     add_files -fileset constrs_1 -norecurse $xdc_files
+} else {
+    puts "WARN: no XDC files found under '$constr_dir'."
 }
 
 # Simulation sources.
+set sim_dir [file join $repo_root "Sim"]
+if {![file isdirectory $sim_dir]} {
+    # Fallback for case-insensitive/legacy layouts.
+    set sim_dir [file join $repo_root "sim"]
+}
 set sim_files [concat \
-    [glob -nocomplain -directory [file join $repo_root sim] -types f *.v] \
-    [glob -nocomplain -directory [file join $repo_root sim] -types f *.sv] \
+    [glob -nocomplain -directory $sim_dir -types f *.v] \
+    [glob -nocomplain -directory $sim_dir -types f *.sv] \
 ]
 if {[llength $sim_files] > 0} {
     add_files -fileset sim_1 -norecurse $sim_files
+} else {
+    puts "WARN: no simulation files found under '$sim_dir'."
 }
 
 update_compile_order -fileset sources_1
