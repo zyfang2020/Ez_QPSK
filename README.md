@@ -53,7 +53,8 @@
 ### 2.3 顶层与模式说明
 
 - 顶层：`RTL/top/pl_comm_top.v`
-  - 支持 TX/RX 模式切换（`op_mode_tx`）。
+  - 支持 TX/RX 独立使能（`tx_en` / `rx_en`）。
+  - `tx_en=0` 时，DAC 输出回零（`ad9762_driver` 配置 `HOLD_LAST=0`）。
   - TX 源支持 `tx_test_pattern` 与 QPSK 调制链选择（`tx_src_sel`）。
   - QPSK 输入支持内部测试源与外部符号口选择（`qpsk_src_sel`）。
 - 固定配置封装：`RTL/top/pl_comm_top_fixed_cfg.v`

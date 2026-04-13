@@ -27,11 +27,11 @@
 ## -----------------------------------------------------------------------------
 ## Mode / Control (can map to DIP keys, PMOD, or AXI GPIO in later stage)
 ## -----------------------------------------------------------------------------
-# set_property PACKAGE_PIN <PIN_OP_MODE_TX> [get_ports op_mode_tx]
-# set_property IOSTANDARD LVCMOS33 [get_ports op_mode_tx]
-
 # set_property PACKAGE_PIN <PIN_TX_EN> [get_ports tx_en]
 # set_property IOSTANDARD LVCMOS33 [get_ports tx_en]
+
+# set_property PACKAGE_PIN <PIN_RX_EN> [get_ports rx_en]
+# set_property IOSTANDARD LVCMOS33 [get_ports rx_en]
 
 # set_property PACKAGE_PIN <PIN_TX_SRC_SEL> [get_ports tx_src_sel]
 # set_property IOSTANDARD LVCMOS33 [get_ports tx_src_sel]
@@ -89,4 +89,3 @@
 ## -----------------------------------------------------------------------------
 # m_axis_rx_tdata / tkeep / tvalid / tready / tlast are commonly routed to AXI DMA
 # inside Vivado Block Design, so they usually do NOT need PACKAGE_PIN constraints.
-

@@ -1,9 +1,11 @@
 # ---- Vivado generated project artifacts ----
 *.cache/
+*.gen/
 *.hw/
 *.ip_user_files/
 *.runs/
 *.sim/
+*.srcs/
 .Xil/
 *.xpr
 

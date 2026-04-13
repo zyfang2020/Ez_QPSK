@@ -9,6 +9,7 @@ set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir ".."]]
 set proj_name  "Ez_QPSK"
 set proj_dir   [file join $repo_root "build" "vivado"]
+set bd_dir     [file join $script_dir "bd"]
 set part_name  "xc7z020clg400-1"
 set top_name   "pl_comm_top_fixed_cfg"
 set sim_top    "tb_qpsk_tx_single_dac_min"
@@ -100,6 +101,34 @@ if {[llength $sim_files] > 0} {
 
 update_compile_order -fileset sources_1
 update_compile_order -fileset sim_1
+
+# Optional: recreate block design(s) from Tcl checked into Git.
+set bd_tcl_files [lsort [glob -nocomplain -directory $bd_dir -types f *.tcl]]
+if {[llength $bd_tcl_files] > 0} {
+    puts "INFO: found [llength $bd_tcl_files] BD Tcl file(s) under $bd_dir"
+    foreach bd_tcl $bd_tcl_files {
+        puts "INFO: sourcing BD Tcl: $bd_tcl"
+        source $bd_tcl
+    }
+
+    set bd_files [lsort [get_files -quiet *.bd]]
+    if {[llength $bd_files] > 0} {
+        foreach bd_file $bd_files {
+            puts "INFO: generating BD targets: $bd_file"
+            generate_target all $bd_file
+        }
+
+        set primary_bd [lindex $bd_files 0]
+        set wrapper_file [make_wrapper -files $primary_bd -top]
+        add_files -norecurse $wrapper_file
+        update_compile_order -fileset sources_1
+
+        set top_name [file rootname [file tail $wrapper_file]]
+        puts "INFO: using BD wrapper as top: $top_name"
+    } else {
+        puts "WARN: BD Tcl was sourced, but no .bd file was created."
+    }
+}
 
 set_property top $top_name [get_filesets sources_1]
 if {[llength [get_filesets sim_1]] > 0} {

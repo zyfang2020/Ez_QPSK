@@ -3,6 +3,9 @@
 // 功能: 当前阶段 PL 最小可运行通信链路顶层
 // TX: (tx_test_pattern | qpsk_test_gen/external_sym -> qpsk_tx_single_dac) -> ad9762_driver
 // RX: ad9215_capture -> async_fifo -> pkt_gen -> axis_to_dma_pkt -> AXIS DMA
+// 说明:
+//   - TX/RX 采用独立使能: tx_en / rx_en
+//   - tx_en=0 时，ad9762_driver 在 HOLD_LAST=0 配置下持续输出 0 电平
 // -----------------------------------------------------------------------------
 module pl_comm_top #(
     parameter integer ADC_DW = 10,
@@ -16,14 +19,13 @@ module pl_comm_top #(
     input  wire                      clk_axi,
     input  wire                      clk_dac,
     input  wire                      rst_n,
-    // 工作模式: 1=TX(发射), 0=RX(接收)
-    // 约定: RX 模式下强制 DAC 输出 0
-    input  wire                      op_mode_tx,
     // 板级 ADC / DAC 数据口
     input  wire [ADC_DW-1:0]         adc_data,
     output wire [DAC_DW-1:0]         dac_data,
-    // TX 测试源配置
+    // TX/RX 总使能
     input  wire                      tx_en,
+    input  wire                      rx_en,
+    // TX 测试源配置
     input  wire [1:0]                tx_mode_sel,
     input  wire [DAC_DW-1:0]         tx_const_data,
     // TX 源选择: 0=tx_test_pattern, 1=QPSK 调制链
@@ -112,7 +114,7 @@ tx_test_pattern #(
 ) u_tx_test_pattern (
     .clk(clk_dac),
     .rst_n(rst_n_dac),
-    .en(tx_en & op_mode_tx),
+    .en(tx_en & (~tx_src_sel)),
     .mode_sel(tx_mode_sel),
     .cfg_const(tx_const_data),
     .m_data(tx_test_data),
@@ -124,7 +126,7 @@ tx_test_pattern #(
 qpsk_test_gen u_qpsk_test_gen (
     .clk(clk_dac),
     .rst_n(rst_n_dac),
-    .en(qpsk_en & op_mode_tx),
+    .en(qpsk_en & tx_en & tx_src_sel),
     .mode_sel(qpsk_mode_sel),
     .cfg_sym(qpsk_cfg_sym),
     .m_sym(qpsk_gen_sym),
@@ -161,8 +163,8 @@ qpsk_tx_single_dac #(
     .m_ready(tx_qpsk_ready)
 );
 
-assign tx_test_path_en = op_mode_tx && (!tx_src_sel) && tx_en;
-assign tx_qpsk_path_en = op_mode_tx && tx_src_sel && qpsk_en;
+assign tx_test_path_en = tx_en && (!tx_src_sel);
+assign tx_qpsk_path_en = tx_en && tx_src_sel && qpsk_en;
 
 assign tx_data       = tx_qpsk_path_en ? tx_qpsk_data :
                        tx_test_path_en ? tx_test_data :
@@ -200,7 +202,7 @@ ad9215_capture #(
     .m_ready(cap_ready)
 );
 
-assign cap_valid_gated = cap_valid & (~op_mode_tx);
+assign cap_valid_gated = cap_valid & rx_en;
 
 // RX: ADC -> AXI 跨时钟域
 stream_async_fifo #(
