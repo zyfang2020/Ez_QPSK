@@ -5,7 +5,8 @@
 // -----------------------------------------------------------------------------
 module ad9215_capture #(
     parameter integer ADC_DW = 10,
-    parameter integer OUT_DW = 16
+    parameter integer OUT_DW = 16,
+    parameter integer SAMPLE_NEGEDGE = 0
 ) (
     // ADC 采样时钟域
     input  wire                clk_adc,
@@ -22,15 +23,32 @@ module ad9215_capture #(
 wire unused_m_ready;
 assign unused_m_ready = m_ready;
 
-always @(posedge clk_adc or negedge rst_n) begin
-    if (!rst_n) begin
-        m_data <= {OUT_DW{1'b0}};
-        m_valid <= 1'b0;
-    end else begin
-        // AD9215 不支持回压：每拍采样，直接送出
-        m_data <= {{(OUT_DW-ADC_DW){1'b0}}, adc_data};
-        m_valid <= 1'b1;
+generate
+    if (SAMPLE_NEGEDGE != 0) begin : g_sample_negedge
+        // 当 ADC 由 FPGA 输出时钟驱动时，可在相反边沿采样，
+        // 以获得半个周期的建立/保持窗口。
+        always @(negedge clk_adc or negedge rst_n) begin
+            if (!rst_n) begin
+                m_data <= {OUT_DW{1'b0}};
+                m_valid <= 1'b0;
+            end else begin
+                // AD9215 不支持回压：每拍采样，直接送出
+                m_data <= {{(OUT_DW-ADC_DW){1'b0}}, adc_data};
+                m_valid <= 1'b1;
+            end
+        end
+    end else begin : g_sample_posedge
+        always @(posedge clk_adc or negedge rst_n) begin
+            if (!rst_n) begin
+                m_data <= {OUT_DW{1'b0}};
+                m_valid <= 1'b0;
+            end else begin
+                // AD9215 不支持回压：每拍采样，直接送出
+                m_data <= {{(OUT_DW-ADC_DW){1'b0}}, adc_data};
+                m_valid <= 1'b1;
+            end
+        end
     end
-end
+endgenerate
 
 endmodule

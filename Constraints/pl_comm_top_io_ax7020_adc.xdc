@@ -1,12 +1,12 @@
 # ------------------------------------------------------------------------------
-# AX7020 ADC Data Pin Constraints for pl_comm_top_fixed_cfg / pl_comm_top
+# AX7020 ADC Pin Constraints for pl_comm_top_fixed_cfg / pl_comm_top
 # ------------------------------------------------------------------------------
 # Source basis:
 # 1) AX7020 user manual: board connector PINxx -> FPGA package pin
 # 2) User-provided ADC mezzanine wiring: adc_data[n] -> board PINxx
 #
 # Current mapping interpreted as:
-#   clk_adc     -> PIN25 -> V13
+#   clk_adc     -> PIN25 -> V13  (FPGA output clock to ADC)
 #   adc_data[0] -> PIN28 -> V12
 #   adc_data[1] -> PIN27 -> W13
 #   adc_data[2] -> PIN30 -> T12
@@ -21,7 +21,7 @@
 # NOTE:
 # - IOSTANDARD is currently set to LVCMOS33 based on the common AX7020 expansion
 #   bank usage assumption. Please confirm target bank VCCO before final bitstream.
-# - This file only constrains ADC parallel data bits for now.
+# - clk_adc is now used as the forwarded output clock to the ADC device.
 # ------------------------------------------------------------------------------
 
 set_property PACKAGE_PIN V13 [get_ports clk_adc]

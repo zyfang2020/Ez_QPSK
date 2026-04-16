@@ -1,12 +1,12 @@
 # ------------------------------------------------------------------------------
-# AX7020 DAC Data Pin Constraints for pl_comm_top_fixed_cfg / pl_comm_top
+# AX7020 DAC Pin Constraints for pl_comm_top_fixed_cfg / pl_comm_top
 # ------------------------------------------------------------------------------
 # Source basis:
 # 1) AX7020 user manual: board connector PINxx -> FPGA package pin
 # 2) User-provided DAC mezzanine wiring: dac_data[n] -> board PINxx
 #
 # Current mapping interpreted as:
-#   clk_dac      -> PIN3  -> W19
+#   clk_dac      -> PIN3  -> W19  (FPGA output clock to DAC)
 #   dac_data[0]  -> PIN16 -> U14
 #   dac_data[1]  -> PIN15 -> U15
 #   dac_data[2]  -> PIN14 -> N17
@@ -23,7 +23,7 @@
 # NOTE:
 # - IOSTANDARD is currently set to LVCMOS33 based on the common AX7020 expansion
 #   bank usage assumption. Please confirm target bank VCCO before final bitstream.
-# - This file only constrains DAC parallel data bits for now.
+# - clk_dac is now used as the forwarded output clock to the DAC device.
 # ------------------------------------------------------------------------------
 
 set_property PACKAGE_PIN W19 [get_ports clk_dac]

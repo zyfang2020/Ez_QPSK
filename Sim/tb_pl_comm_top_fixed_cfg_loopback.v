@@ -7,7 +7,7 @@
 // 2) 检查 RX AXIS 输出是否按 ADC 采样顺序转发，且高位零扩展正确
 // 3) 检查固定包长对应的 tlast 节奏，以及回压期间 tdata/tlast 保持稳定
 // 说明:
-//   - 用 clk_adc 对 dac_data 做简化数字回灌，并右移 2bit 映射到 10bit adc_data
+//   - 用 DUT 输出的 clk_adc 对 dac_data 做简化数字回灌，并右移 2bit 映射到 10bit adc_data
 //   - 该用例聚焦 PL 数据链闭环，不尝试逼近真实模拟链路
 // -----------------------------------------------------------------------------
 module tb_pl_comm_top_fixed_cfg_loopback;
@@ -22,11 +22,11 @@ localparam integer EXP_Q_DEPTH   = 4096;
 localparam integer MIN_CHANGES   = TARGET_BEAT / 16;
 localparam [((RX_DW+7)/8)-1:0] AXIS_KEEP_ALL = {((RX_DW+7)/8){1'b1}};
 
-reg                       clk_dac;
-reg                       clk_adc;
 reg                       clk_axi;
 reg                       rst_n;
 reg  [ADC_DW-1:0]         adc_data;
+wire                      clk_dac;
+wire                      clk_adc;
 wire [DAC_DW-1:0]         dac_data;
 wire [RX_DW-1:0]          m_axis_rx_tdata;
 wire [((RX_DW+7)/8)-1:0]  m_axis_rx_tkeep;
@@ -65,23 +65,10 @@ task tb_fail;
     end
 endtask
 
-// DAC 时钟 100MHz
-initial clk_dac = 1'b0;
-always #5 clk_dac = ~clk_dac;
-
-// ADC 时钟同频率、相位偏移 2ns，用于稳定采样 DAC 并口输出
-initial begin
-    clk_adc = 1'b0;
-    #2;
-    forever #5 clk_adc = ~clk_adc;
-end
-
-// AXI 时钟约 166MHz，并保留相位偏移
-initial begin
-    clk_axi = 1'b0;
-    #1;
-    forever #3 clk_axi = ~clk_axi;
-end
+// 纯 RTL 顶层当前使用 clk_axi 作为内部工作时钟，
+// 并把它直接转发为 clk_adc / clk_dac 输出。
+initial clk_axi = 1'b0;
+always #5 clk_axi = ~clk_axi;
 
 pl_comm_top_fixed_cfg #(
     .ADC_DW(ADC_DW),
@@ -106,7 +93,7 @@ pl_comm_top_fixed_cfg #(
 );
 
 // 在 testbench 侧镜像 reset_sync 的同步释放行为，便于和 DUT 内部时序对齐
-always @(posedge clk_adc or negedge rst_n) begin
+always @(posedge clk_axi or negedge rst_n) begin
     if (!rst_n) begin
         rst_sync_adc <= 2'b00;
     end else begin
@@ -125,7 +112,8 @@ end
 // 简化数字回环:
 // 1) 只有当 RX 写侧真的把样本送进 async FIFO 时，才把该样本记入期望队列
 //    这样可以避开 FIFO reset busy/ready=0 时 ADC 不可回压导致的前几拍丢样
-// 2) 再把当前稳定的 dac_data 右移 2bit，作为下一拍 adc_data 驱动值
+// 2) 用 DUT 输出给 ADC 的 clk_adc 在上升沿更新 adc_data，
+//    DUT 在内部相反边沿采样，从而形成半个周期的采样错开
 always @(posedge clk_adc or negedge rst_n) begin
     if (!rst_n) begin
         adc_data   <= {ADC_DW{1'b0}};
@@ -247,7 +235,7 @@ initial begin
     rst_sync_axi    = 2'b00;
     axi_cycle_cnt   = 0;
 
-    repeat (12) @(posedge clk_dac);
+    repeat (12) @(posedge clk_axi);
     rst_n = 1'b1;
 end
 

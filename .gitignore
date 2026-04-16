@@ -9,6 +9,9 @@
 .Xil/
 *.xpr
 
+# ---- Reference Documentation ----
+ReferenceDoc/
+
 # ---- Generic tool/runtime outputs ----
 *.jou
 *.log

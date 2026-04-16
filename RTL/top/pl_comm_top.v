@@ -15,9 +15,13 @@ module pl_comm_top #(
     parameter integer PKT_LEN = 4096
 ) (
     // 时钟与全局复位
-    input  wire                      clk_adc,
+    // 纯 RTL 顶层当前约定：
+    // - clk_axi 作为板级输入系统时钟
+    // - clk_adc / clk_dac 为导出到板外 ADC / DAC 的时钟
+    // - ADC 侧使用 clk_adc 的相反边沿做采样，以形成半周期错开
+    output wire                      clk_adc,
     input  wire                      clk_axi,
-    input  wire                      clk_dac,
+    output wire                      clk_dac,
     input  wire                      rst_n,
     // 板级 ADC / DAC 数据口
     input  wire [ADC_DW-1:0]         adc_data,
@@ -88,6 +92,12 @@ wire pkt_ready;
 wire pkt_last;
 
 localparam [23:0] QPSK_PHASE_INC_DEFAULT = 24'h133333;
+
+// 当前纯 RTL 顶层使用单一板级时钟：
+// - 直接转发为 ADC / DAC 板级时钟输出
+// - FPGA 内部对 DAC 采用相反边沿更新数据，对 ADC 采用相反边沿采样
+assign clk_adc = clk_axi;
+assign clk_dac = clk_axi;
 
 // 各时钟域复位同步
 reset_sync u_reset_sync_adc (
@@ -178,6 +188,7 @@ assign tx_test_ready = tx_test_path_en ? tx_ready : 1'b0;
 // TX: 推送到 DAC
 ad9762_driver #(
     .DW(DAC_DW),
+    .UPDATE_NEGEDGE(1),
     // TX 关闭时希望 DAC 回零（例如 RX 模式）
     .HOLD_LAST(0)
 ) u_ad9762_driver (
@@ -192,7 +203,8 @@ ad9762_driver #(
 // RX: ADC 并口适配为流
 ad9215_capture #(
     .ADC_DW(ADC_DW),
-    .OUT_DW(RX_DW)
+    .OUT_DW(RX_DW),
+    .SAMPLE_NEGEDGE(1)
 ) u_ad9215_capture (
     .clk_adc(clk_adc),
     .rst_n(rst_n_adc),
