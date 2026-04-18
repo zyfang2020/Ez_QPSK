@@ -48,9 +48,10 @@
 - 时钟域：`clk_adc`、`clk_axi`、`clk_dac`。
 - 全局复位：低有效 `rst_n`。
 - 复位同步：通过 `RTL/utils/reset_sync.v` 在各时钟域同步释放。
-- 约束文件：
-  - `Constraints/pl_comm_top_clocks.xdc`
-  - `Constraints/pl_comm_top_io_template.xdc`
+- 当前入库约束文件：
+  - `Constraints/pl_comm_top_io_ax7020_adc.xdc`
+  - `Constraints/pl_comm_top_io_ax7020_dac.xdc`
+- `clk_axi` 等 PS/BD 相关时钟连接由 Vivado 工程重建脚本中的 BD 定义恢复。
 
 ### 2.3 顶层与模式说明
 
@@ -76,7 +77,7 @@
 - `Constraints/`：约束目录（`.xdc`，包含时钟与 IO 约束模板）。
 - `Tool/`：离线处理工具目录（算法验证、后处理脚本、辅助数据）。
 - `sw/`：PS 端或配套软件源码目录（如裸机 DMA 接收示例、后续导出/联网工具）。
-- `scripts/`：自动化脚本目录（工程重建、综合、实现、批处理）。
+- `scripts/`：自动化脚本目录（官方 Vivado 工程重建脚本、仿真批处理）。
 - `README.md`：项目总说明（目标、阶段、工程说明、规范）。
 
 ### 2.5 当前仿真入口
@@ -117,19 +118,21 @@
 - `Sim/`：放 testbench、仿真专用激励与仿真说明。
 - `Constraints/`：放 `.xdc` 约束（时钟、IO、时序例外等）。
 - `Tool/`：放离线处理工具脚本（Matlab/Python）和离线分析辅助数据。
-- `scripts/`：放工程自动化脚本（重建工程、综合、实现、批处理流程）。
+- `scripts/`：放工程自动化脚本。当前主入口为官方导出的 `scripts/rebuild_project_official.tcl`，用于恢复 Vivado 工程状态；仿真批处理脚本也放在该目录。
 - `sw/`：放 PS 端软件源码、板端 bring-up 示例和后续软件工具。
 - 根目录文档/工程文件约定：
 - `README.md`：项目总说明与阶段目标、规范基线。
 - `Sim/README.md`：仿真运行方法与通过判据。
 - `Tool/README.md`：工具脚本目录约定与使用说明。
-- `Ez_QPSK.xpr`：Vivado 工程入口文件（可选保留用于快速打开）。
+- `scripts/rebuild_project_official.tcl`：Vivado 工程恢复入口，提交时应随源码一并入库。
 
 ### 3.2 Git 管理规范
 
 - `.gitignore`：忽略 Vivado 生成目录和运行日志（如 `*.runs/`、`*.cache/`、`*.sim/`）。
 - `.gitattributes`：统一文本 LF；`*.bit/*.bin/*.mcs/*.dcp/*.ltx` 标记为二进制。
-- 建议仅提交可复现工程所需文件：RTL、约束、脚本、仿真、文档。
+- 建议仅提交可复现工程所需文件：`RTL/`、`Sim/`、`Constraints/`、`scripts/rebuild_project_official.tcl`、仿真脚本、文档。
+- 不依赖 `*.xpr`、`*.srcs/`、`*.gen/`、`*.runs/`、`.Xil/` 作为版本管理对象；这些内容应通过官方重建脚本重新生成。
+- 当前工程中的 BD/PS 配置以 `scripts/rebuild_project_official.tcl` 中内嵌的 Vivado Tcl 定义为准。
 
 ### 3.3 RTL 与 CDC 规范
 
