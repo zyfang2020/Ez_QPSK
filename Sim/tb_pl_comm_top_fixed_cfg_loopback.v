@@ -7,6 +7,7 @@
 // 2) 检查 RX AXIS 输出是否按 ADC 采样顺序转发，且高位零扩展正确
 // 3) 检查固定包长对应的 tlast 节奏，以及回压期间 tdata/tlast 保持稳定
 // 说明:
+//   - 用独立的 clk_io / clk_axi 双时钟驱动 DUT
 //   - 用 DUT 输出的 clk_adc 对 dac_data 做简化数字回灌，并右移 2bit 映射到 10bit adc_data
 //   - 该用例聚焦 PL 数据链闭环，不尝试逼近真实模拟链路
 // -----------------------------------------------------------------------------
@@ -22,6 +23,7 @@ localparam integer EXP_Q_DEPTH   = 4096;
 localparam integer MIN_CHANGES   = TARGET_BEAT / 16;
 localparam [((RX_DW+7)/8)-1:0] AXIS_KEEP_ALL = {((RX_DW+7)/8){1'b1}};
 
+reg                       clk_io;
 reg                       clk_axi;
 reg                       rst_n;
 reg  [ADC_DW-1:0]         adc_data;
@@ -65,10 +67,12 @@ task tb_fail;
     end
 endtask
 
-// 纯 RTL 顶层当前使用 clk_axi 作为内部工作时钟，
-// 并把它直接转发为 clk_adc / clk_dac 输出。
+// 采样侧与 AXI 侧分别使用独立时钟，验证 async FIFO 跨域路径。
+initial clk_io = 1'b0;
+always #5 clk_io = ~clk_io;
+
 initial clk_axi = 1'b0;
-always #5 clk_axi = ~clk_axi;
+always #4 clk_axi = ~clk_axi;
 
 pl_comm_top_fixed_cfg #(
     .ADC_DW(ADC_DW),
@@ -79,6 +83,7 @@ pl_comm_top_fixed_cfg #(
     .FIXED_TX_EN(1),
     .FIXED_RX_EN(1)
 ) u_dut (
+    .clk_io(clk_io),
     .clk_adc(clk_adc),
     .clk_axi(clk_axi),
     .clk_dac(clk_dac),
@@ -93,7 +98,7 @@ pl_comm_top_fixed_cfg #(
 );
 
 // 在 testbench 侧镜像 reset_sync 的同步释放行为，便于和 DUT 内部时序对齐
-always @(posedge clk_axi or negedge rst_n) begin
+always @(posedge clk_io or negedge rst_n) begin
     if (!rst_n) begin
         rst_sync_adc <= 2'b00;
     end else begin

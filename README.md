@@ -106,6 +106,15 @@
 - PowerShell 等价命令：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_tx_single_dac_sim.tcl`
 
+### 2.8 导出当前工程重建脚本
+
+- 在 Vivado Tcl Console 中导出当前工程重建脚本：
+  - `write_project_tcl -force -all_properties -dump_project_info ./scripts/rebuild_project_current.tcl`
+- 当前仓库建议使用上面这一条，不使用 `-use_bd_files`。
+- 原因：`-use_bd_files` 会让导出的脚本依赖工程中的 `.bd` 等 BD 文件本体；如果这些文件不进 Git，别人拉仓库后脚本可能无法独立重建工程。
+- 当前仓库更适合保留“完整展开”的 Tcl 重建脚本，这样即使 `*.bd`、`*.srcs/`、`*.gen/` 没有入库，也能仅靠源码和脚本恢复工程。
+- 如果后续你决定把 `Ez_QPSK.srcs/sources_1/bd/` 一并纳入版本管理，再考虑 `-use_bd_files` 会更合适；它生成的脚本通常更短，也更接近直接复用现有 BD 文件。
+
 ## 3. 规范与标准
 
 ### 3.1 目录规范

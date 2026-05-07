@@ -15,10 +15,12 @@ module pl_comm_top #(
     parameter integer PKT_LEN = 4096
 ) (
     // 时钟与全局复位
-    // 纯 RTL 顶层当前约定：
-    // - clk_axi 作为板级输入系统时钟
-    // - clk_adc / clk_dac 为导出到板外 ADC / DAC 的时钟
+    // 当前约定：
+    // - clk_axi 作为 AXI/DMA 时钟输入
+    // - clk_io 作为 ADC/DAC 采样侧时钟输入
+    // - clk_adc / clk_dac 直接转发 clk_io 到板外器件
     // - ADC 侧使用 clk_adc 的相反边沿做采样，以形成半周期错开
+    input  wire                      clk_io,
     output wire                      clk_adc,
     input  wire                      clk_axi,
     output wire                      clk_dac,
@@ -93,11 +95,9 @@ wire pkt_last;
 
 localparam [23:0] QPSK_PHASE_INC_DEFAULT = 24'h133333;
 
-// 当前纯 RTL 顶层使用单一板级时钟：
-// - 直接转发为 ADC / DAC 板级时钟输出
-// - FPGA 内部对 DAC 采用相反边沿更新数据，对 ADC 采用相反边沿采样
-assign clk_adc = clk_axi;
-assign clk_dac = clk_axi;
+// ADC / DAC 板级时钟直接由独立的采样侧时钟输入驱动。
+assign clk_adc = clk_io;
+assign clk_dac = clk_io;
 
 // 各时钟域复位同步
 reset_sync u_reset_sync_adc (

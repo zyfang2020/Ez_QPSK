@@ -1,11 +1,10 @@
 // -----------------------------------------------------------------------------
-// 模块: pl_comm_top_fixed_cfg
-// 功能: pl_comm_top 的固定配置封装（上板最小联调用）
-// 说明:
-//   - 默认同时启用 TX/RX（便于本地回环联调，可按需修改 FIXED_TX_EN/FIXED_RX_EN）
-//   - 固定选择 QPSK 发射链 + 内部 qpsk_test_gen
-//   - 外部 qpsk_sym_* 预留口不使用
-//   - 纯 RTL 顶层当前使用 clk_axi 作为输入系统时钟，并导出 clk_adc/clk_dac
+// Module: pl_comm_top_fixed_cfg
+// Function: Fixed-configuration wrapper of pl_comm_top for board bring-up.
+// Notes:
+//   - TX/RX are enabled by default for loopback bring-up.
+//   - clk_io drives the ADC/DAC side processing path and is forwarded to board IO.
+//   - clk_axi drives the AXI/DMA side processing path.
 // -----------------------------------------------------------------------------
 module pl_comm_top_fixed_cfg #(
     parameter integer ADC_DW = 10,
@@ -16,10 +15,13 @@ module pl_comm_top_fixed_cfg #(
     parameter integer FIXED_TX_EN = 1,
     parameter integer FIXED_RX_EN = 1
 ) (
-    output wire                      clk_adc,
-    (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME clk_axi, ASSOCIATED_BUSIF m_axis_rx, ASSOCIATED_RESET rst_n" *)
+    (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME clk_io" *)
+    (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 clk_io CLK" *)
+    input  wire                      clk_io,
+    (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME clk_axi, ASSOCIATED_BUSIF m_axis_rx" *)
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 clk_axi CLK" *)
     input  wire                      clk_axi,
+    output wire                      clk_adc,
     output wire                      clk_dac,
     (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME rst_n, POLARITY ACTIVE_LOW" *)
     (* X_INTERFACE_INFO = "xilinx.com:signal:reset:1.0 rst_n RST" *)
@@ -49,6 +51,7 @@ module pl_comm_top_fixed_cfg #(
         .FIFO_DEPTH(FIFO_DEPTH),
         .PKT_LEN(PKT_LEN)
     ) u_pl_comm_top (
+        .clk_io(clk_io),
         .clk_adc(clk_adc),
         .clk_axi(clk_axi),
         .clk_dac(clk_dac),

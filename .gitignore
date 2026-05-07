@@ -8,6 +8,13 @@
 *.srcs/
 .Xil/
 *.xpr
+*.xsa
+
+# ---- Vitis generated project artifacts ----
+Vitis_WS/
+
+# ---- Local tooling artifacts ----
+.codex
 
 # ---- Reference Documentation ----
 ReferenceDoc/
