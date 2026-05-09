@@ -9,3 +9,5 @@
 
 当前已提供：
 - `Tool/matlab/qpsk_single_dac_demod_demo.m`
+- `Tool/matlab/qpsk_uart_capture_demod.m`
+- `Tool/python/uart_capture_qpsk.py`

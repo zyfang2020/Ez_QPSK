@@ -5,7 +5,7 @@
 // -----------------------------------------------------------------------------
 module stream_pkt_gen #(
     parameter integer DW = 16,
-    parameter integer PKT_LEN = 4096
+    parameter integer PKT_LEN = 100000
 ) (
     input  wire          clk,
     input  wire          rst_n,

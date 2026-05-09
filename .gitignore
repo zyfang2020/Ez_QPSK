@@ -10,6 +10,10 @@
 *.xpr
 *.xsa
 
+# ---- Tools temp data ----
+Tool/data
+Tool/python/__pycache__/
+
 # ---- Vitis generated project artifacts ----
 Vitis_WS/
 
@@ -71,5 +75,4 @@ Thumbs.db
 !RTL/**
 !Sim/**
 !Constraints/**
-!Tool/**
 !README.md

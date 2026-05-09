@@ -11,7 +11,7 @@ module tb_qpsk_tx_single_dac_min;
 
 localparam integer DAC_DW        = 12;
 localparam integer TARGET_ACCEPT = 50000;
-localparam [23:0]  PHASE_INC     = 24'h133333;
+localparam [23:0]  PHASE_INC     = 24'h11EB85;
 localparam [1:0]   RRC_BETA_SEL  = 2'd2; // 0:0.20, 1:0.35, 2:0.50
 localparam integer DUMP_EN       = 1;
 localparam [255:0] DUMP_FILE     = "qpsk_single_dac_samples_gray.csv";

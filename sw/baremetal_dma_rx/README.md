@@ -9,7 +9,11 @@
 - `main.c`
   - 最小 DMA S2MM 接收示例
   - 轮询方式等待 DMA 完成
-  - 完成后打印前若干个 16-bit 样本
+  - 当前默认按 `PKT_LEN=100000` 样本做单包抓取
+  - PS 侧只发起 `1` 次 DMA simple transfer，抓完整包后直接导出
+  - 采集前只对 RX 区做一次 cache 准备
+  - 导出前会把每个样本强制掩成低 `10` 位有效、高位清零
+  - 通过当前 `stdout` 绑定的 UART 发送一帧二进制数据到 PC
 
 ## 接入说明
 
@@ -32,8 +36,32 @@
    - 必须落在可用 DDR 区域
    - 且避免覆盖程序、栈和 BSS
 3. `RX_LEN_BYTES`
-   - 先用一个固定长度做 bring-up
-   - 应与 PL 侧一次 DMA 接收预期长度一致
+   - AXI DMA simple mode 下每次 transfer 长度必须与 PL 侧 `TLAST` 包长一致
+   - 当前工程按 `PKT_LEN=100000` 样本接收单包
+4. `stdout`
+   - 需要在 Vitis standalone BSP 里绑定到 `ps7_uart_1`
+   - 否则二进制帧会发到 JTAG DCC，而不是板载串口
+5. `AXI DMA buffer length width`
+   - `100000` 个 `u16` 样本等于 `200000` 字节
+   - 当前 `scripts/rebuild_project_current.tcl` 中 `CONFIG.c_sg_length_width {23}` 足够覆盖这个长度
+
+## 当前推荐流程
+
+1. PL 侧保持 `PKT_LEN=100000`
+2. PS 侧接收 `1` 个 DMA 包，共 `100000` 个容器样本
+3. 抓包完成后把这一整包导出到 PC 做离线解调
+4. 在 PC 侧检查 `sample_count=100000`，且高 `6` 位应全部为 `0`
+5. 如果这样仍然错位，再去怀疑上板时序、ADC 采样边沿或更底层的数据稳定性
+
+## 关于“乒乓缓冲”是否合适
+
+- 对“边采边处理”来说，乒乓缓冲是对的方向
+- 但当前工程里的 AXI DMA 是 `simple mode`，同一时刻只能挂一个 S2MM transfer
+- 所以软件层面的乒乓只能帮助你在处理 `bufA` 时尽快重 arm `bufB`，不能消掉包与包之间天然存在的 re-arm gap
+- 现在把抓取改成“单包 100000 样本”后，至少多包 re-arm gap 不再是当前主矛盾，更适合先验证板端原始数据链是否稳定
+- 如果你的目标是连续、无缝抓流，真正有效的方案是：
+  - AXI DMA 改 `SG mode` 并做 BD ring / cyclic
+  - 或者在 PL 侧继续加深 FIFO，并补充停流/复位同步控制
 
 ## 初次上板建议
 
@@ -41,3 +69,18 @@
 2. 串口打印前 16~32 个样本
 3. 确认 DMA 不报错、传输完成、数据非全 0/全常数
 4. 再扩展为多包接收或连续采集
+
+## UART 导出协议
+
+- 帧头 magic：`QPSKDMA1`（8 字节 ASCII）
+- 后续字段：4 个小端 `u32`
+- 字段顺序：`version`、`sample_count`、`payload_bytes`、`checksum`
+- 负载：`sample_count` 个小端 `u16` 原始样本
+- `checksum`：所有 `u16` 样本按无符号求和后截断到 `u32`
+
+## PC 端接收
+
+- 配套脚本：`Tool/python/uart_capture_qpsk.py`
+- 示例：
+  - `python Tool/python/uart_capture_qpsk.py --port COM5`
+  - `python Tool/python/uart_capture_qpsk.py --port /dev/ttyUSB0 --baud 115200`

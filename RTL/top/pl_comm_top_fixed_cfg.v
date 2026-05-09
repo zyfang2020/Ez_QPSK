@@ -11,7 +11,7 @@ module pl_comm_top_fixed_cfg #(
     parameter integer DAC_DW = 12,
     parameter integer RX_DW = 16,
     parameter integer FIFO_DEPTH = 2048,
-    parameter integer PKT_LEN = 4096,
+    parameter integer PKT_LEN = 100000,
     parameter integer FIXED_TX_EN = 1,
     parameter integer FIXED_RX_EN = 1
 ) (

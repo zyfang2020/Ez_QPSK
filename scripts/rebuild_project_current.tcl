@@ -2338,7 +2338,7 @@ set_property -name "strategy" -value "Vivado Implementation Defaults" -objects $
 set_property -name "steps.init_design.tcl.pre" -value "" -objects $obj
 set_property -name "steps.init_design.tcl.post" -value "" -objects $obj
 set_property -name "steps.opt_design.is_enabled" -value "1" -objects $obj
-set_property -name "steps.opt_design.tcl.pre" -value "$proj_dir/D:/Project/ProjectVivado/Ez_QPSK/scripts/fix_dbg_hub_clock_pre_opt.tcl" -objects $obj
+set_property -name "steps.opt_design.tcl.pre" -value "" -objects $obj
 set_property -name "steps.opt_design.tcl.post" -value "" -objects $obj
 set_property -name "steps.opt_design.args.verbose" -value "0" -objects $obj
 set_property -name "steps.opt_design.args.directive" -value "Default" -objects $obj

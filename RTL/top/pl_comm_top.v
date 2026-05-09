@@ -12,7 +12,7 @@ module pl_comm_top #(
     parameter integer DAC_DW = 12,
     parameter integer RX_DW = 16,
     parameter integer FIFO_DEPTH = 2048,
-    parameter integer PKT_LEN = 4096
+    parameter integer PKT_LEN = 100000
 ) (
     // 时钟与全局复位
     // 当前约定：
@@ -93,7 +93,7 @@ wire pkt_valid;
 wire pkt_ready;
 wire pkt_last;
 
-localparam [23:0] QPSK_PHASE_INC_DEFAULT = 24'h133333;
+localparam [23:0] QPSK_PHASE_INC_DEFAULT = 24'h11EB85;
 
 // ADC / DAC 板级时钟直接由独立的采样侧时钟输入驱动。
 assign clk_adc = clk_io;
