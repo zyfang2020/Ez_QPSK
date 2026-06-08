@@ -20,7 +20,7 @@
 
 ### 1.3 当前进度（当前处于阶段 1）
 
-- 已完成：QPSK 调制链 RTL 实现与仿真验证（未上板）。
+- 已完成：QPSK 调制链 RTL 实现与仿真验证（单板本地回环）。
 - 已完成：`qpsk_test_gen -> qpsk_tx_single_dac -> ad9762_driver` 单 DAC 发射链仿真验证。
 - 已完成：ADC 侧采集与 AXI 搬运通路 RTL 实现（`ad9215_capture -> stream_async_fifo -> stream_pkt_gen -> axis_to_dma_pkt`）。
 - 已完成：顶层“无板数字回环”仿真验证，确认 `DAC -> 本地回环 ADC -> RX AXIS` 数据链与 `tlast` 行为正确。
@@ -49,9 +49,13 @@
 - 全局复位：低有效 `rst_n`。
 - 复位同步：通过 `RTL/utils/reset_sync.v` 在各时钟域同步释放。
 - 当前入库约束文件：
+  - `Constraints/sys_clk_ax7020.xdc`
   - `Constraints/pl_comm_top_io_ax7020_adc.xdc`
   - `Constraints/pl_comm_top_io_ax7020_dac.xdc`
-- `clk_axi` 等 PS/BD 相关时钟连接由 Vivado 工程重建脚本中的 BD 定义恢复。
+- 当前 BD 中，主链路时钟由 PS `FCLK_CLK0` 提供，并同时连接到 `clk_axi` 和 `clk_io`。
+- `pl_comm_top` 内部把 `clk_io` 直接转发为板外 `clk_adc` / `clk_dac`。
+- `clk_50M` 是 AX7020 板载 PL 时钟输入；当前 BD 中保留为外部端口，主要用于调试逻辑时钟，不作为主 QPSK 采样链路的时钟源。
+- PS/BD 相关时钟连接由 Vivado 工程重建脚本中的 BD 定义恢复。
 
 ### 2.3 顶层与模式说明
 
@@ -97,16 +101,23 @@
 - 当前主线工程暂不提前并入接收端在线解调逻辑，避免在阶段 1 过早引入复杂度与综合负担。
 - 后续进入阶段 2 时，建议以当前工程为稳定基线，在新分支或 fork 上扩展接收端解调功能。
 
-### 2.7 本机 Vivado 命令行路径（Windows）
+### 2.7 本机 Xilinx 工具版本（Windows）
 
-- Vivado 安装路径（已确认）：
+- 当前工程建议固定使用同一大版本的 Vivado / Vitis，避免 PS7、AXI DMA、BSP 或 XSA 元数据在不同版本间产生差异。
+- 本机已确认版本：
+  - Vivado：`2020.2`
+  - Vitis：`2020.2`
+  - Vitis HLS：`2020.2`
+- Vivado 命令行路径：
   - `D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat`
+- Vitis 安装目录：
+  - `D:\Program_Files\Xilinx\Vitis\2020.2`
 - 在工程根目录批处理运行单 DAC TX 仿真（不打开 GUI）：
   - `D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat -mode batch -source scripts/run_qpsk_tx_single_dac_sim.tcl`
 - PowerShell 等价命令：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_tx_single_dac_sim.tcl`
 
-### 2.8 导出当前工程重建脚本
+### 2.8 Vivado 工程重建脚本
 
 - 在 Vivado Tcl Console 中导出当前工程重建脚本：
   - `write_project_tcl -force -all_properties -dump_project_info ./scripts/rebuild_project_current.tcl`
@@ -114,6 +125,27 @@
 - 原因：`-use_bd_files` 会让导出的脚本依赖工程中的 `.bd` 等 BD 文件本体；如果这些文件不进 Git，别人拉仓库后脚本可能无法独立重建工程。
 - 当前仓库更适合保留“完整展开”的 Tcl 重建脚本，这样即使 `*.bd`、`*.srcs/`、`*.gen/` 没有入库，也能仅靠源码和脚本恢复工程。
 - 如果后续你决定把 `Ez_QPSK.srcs/sources_1/bd/` 一并纳入版本管理，再考虑 `-use_bd_files` 会更合适；它生成的脚本通常更短，也更接近直接复用现有 BD 文件。
+
+#### 从 Git 节点恢复 Vivado 工程
+
+可以把 Git 中的源码节点视为工程基线：切回某个 commit / tag 后，用该节点里的 `scripts/rebuild_project_current.tcl` 恢复 Vivado 工程生成物。
+
+推荐流程：
+
+1. 关闭 Vivado / Vitis。
+2. 在仓库根目录切到目标节点：
+   - `git checkout <commit-or-tag>`
+3. 如果要严格复现该节点，先清理旧的 Vivado 生成物，或直接在干净 clone 中操作。生成物包括 `Ez_QPSK.xpr`、`Ez_QPSK.srcs/`、`Ez_QPSK.gen/`、`Ez_QPSK.runs/`、`Ez_QPSK.cache/`、`Ez_QPSK.hw/`、`Ez_QPSK.sim/`、`.Xil/` 等。
+4. 从工程父目录运行重建脚本，使脚本创建/恢复 `Ez_QPSK` 工程目录：
+   - `cd D:\Project\ProjectVivado`
+   - `D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat -mode batch -source Ez_QPSK/scripts/rebuild_project_current.tcl -tclargs --origin_dir Ez_QPSK/scripts --project_name Ez_QPSK`
+5. 打开恢复后的 `Ez_QPSK.xpr`，按需要重新综合、实现、生成 bitstream，并重新导出 XSA。
+
+注意：
+
+- Git 只保证恢复入库源码、约束、脚本和说明文件；Vivado 生成目录、bitstream、XSA、Vitis 工作区不作为源码基线。
+- `scripts/run_qpsk_tx_single_dac_sim.tcl` 需要已有 `Ez_QPSK.xpr`，所以干净 checkout 后应先运行重建脚本，再运行该仿真脚本。
+- 如果只是在当前工作树里回退源码，但没有清理旧生成物，Vivado 可能继续看到旧的缓存或旧 BD 输出；做可复现实验时优先使用干净 clone 或清理生成目录。
 
 ## 3. 规范与标准
 
@@ -127,21 +159,22 @@
 - `Sim/`：放 testbench、仿真专用激励与仿真说明。
 - `Constraints/`：放 `.xdc` 约束（时钟、IO、时序例外等）。
 - `Tool/`：放离线处理工具脚本（Matlab/Python）和离线分析辅助数据。
-- `scripts/`：放工程自动化脚本。当前主入口为官方导出的 `scripts/rebuild_project_official.tcl`，用于恢复 Vivado 工程状态；仿真批处理脚本也放在该目录。
+- `scripts/`：放工程自动化脚本。当前主入口为官方导出的 `scripts/rebuild_project_current.tcl`，用于恢复 Vivado 工程状态；仿真批处理脚本也放在该目录。
 - `sw/`：放 PS 端软件源码、板端 bring-up 示例和后续软件工具。
 - 根目录文档/工程文件约定：
 - `README.md`：项目总说明与阶段目标、规范基线。
 - `Sim/README.md`：仿真运行方法与通过判据。
 - `Tool/README.md`：工具脚本目录约定与使用说明。
-- `scripts/rebuild_project_official.tcl`：Vivado 工程恢复入口，提交时应随源码一并入库。
+- `scripts/rebuild_project_current.tcl`：Vivado 工程恢复入口，提交时应随源码一并入库。
 
 ### 3.2 Git 管理规范
 
 - `.gitignore`：忽略 Vivado 生成目录和运行日志（如 `*.runs/`、`*.cache/`、`*.sim/`）。
 - `.gitattributes`：统一文本 LF；`*.bit/*.bin/*.mcs/*.dcp/*.ltx` 标记为二进制。
-- 建议仅提交可复现工程所需文件：`RTL/`、`Sim/`、`Constraints/`、`scripts/rebuild_project_official.tcl`、仿真脚本、文档。
-- 不依赖 `*.xpr`、`*.srcs/`、`*.gen/`、`*.runs/`、`.Xil/` 作为版本管理对象；这些内容应通过官方重建脚本重新生成。
-- 当前工程中的 BD/PS 配置以 `scripts/rebuild_project_official.tcl` 中内嵌的 Vivado Tcl 定义为准。
+- 建议仅提交可复现工程所需文件：`RTL/`、`Sim/`、`Constraints/`、`scripts/rebuild_project_current.tcl`、仿真脚本、`sw/` 下手写源码、`Tool/` 下脚本和文档。
+- 不依赖 `*.xpr`、`*.srcs/`、`*.gen/`、`*.runs/`、`.Xil/`、`*.xsa`、`Vitis_WS/` 作为版本管理对象；这些内容应通过重建脚本、Vivado 导出或 Vitis 平台重新生成。
+- 当前工程中的 BD/PS 配置以 `scripts/rebuild_project_current.tcl` 中内嵌的 Vivado Tcl 定义为准。
+- `*.bit`、`*.bin`、`*.mcs`、`*.ltx`、`*.dcp` 和 `*.xsa` 可作为阶段性 release 附件保存，但不建议作为日常源码提交。
 
 ### 3.3 RTL 与 CDC 规范
 

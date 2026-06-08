@@ -23,6 +23,13 @@
 4. 根据导出的 `xparameters.h` 核对 DMA 设备号、DDR 地址范围和 UART 输出
 5. 下载运行，观察串口输出
 
+## Vitis 版本管理口径
+
+- 当前建议 Vivado 和 Vitis 使用同一版本：`2020.2`。
+- `Vitis_WS/` 是本机工作区和生成物目录，不作为源码入库。
+- Git 中保留 `sw/` 下的手写应用源码和说明文件；standalone platform、BSP、FSBL、`.elf` 等由 Vitis 根据 Vivado 导出的 XSA 重新生成。
+- 如果切回历史 Git 节点，应先用该节点的 Vivado 重建脚本恢复硬件工程并重新导出 XSA，再在 Vitis 中刷新或重建 platform / application。
+
 ## 当前边界
 
 - 这里先只做“最小裸机 DMA 接收”
