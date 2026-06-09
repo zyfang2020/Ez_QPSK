@@ -45,6 +45,11 @@ module pl_comm_top #(
     input  wire [1:0]                qpsk_sym_data,
     input  wire                      qpsk_sym_valid,
     output wire                      qpsk_sym_ready,
+    // PL-side online RX demod debug stream. These are internal/debug-facing
+    // status outputs; board-level pin export can be added later if needed.
+    output wire [1:0]                rx_demod_sym,
+    output wire                      rx_demod_valid,
+    output wire                      rx_demod_lock,
     // 输出到 AXI DMA S2MM 的 AXIS 口
     output wire [RX_DW-1:0]          m_axis_rx_tdata,
     output wire [((RX_DW+7)/8)-1:0]  m_axis_rx_tkeep,
@@ -83,6 +88,12 @@ wire [RX_DW-1:0] cap_data;
 wire cap_valid;
 wire cap_ready;
 wire cap_valid_gated;
+
+(* keep = "true", mark_debug = "true" *) wire signed [15:0] rx_demod_dbg_i;
+(* keep = "true", mark_debug = "true" *) wire signed [15:0] rx_demod_dbg_q;
+(* keep = "true", mark_debug = "true" *) wire [5:0] rx_demod_dbg_best_phase;
+(* keep = "true", mark_debug = "true" *) wire [3:0] rx_demod_dbg_phase_bin;
+(* keep = "true", mark_debug = "true" *) wire [7:0] rx_demod_dbg_lock_score;
 
 wire [RX_DW-1:0] fifo_data;
 wire fifo_valid;
@@ -215,6 +226,34 @@ ad9215_capture #(
 );
 
 assign cap_valid_gated = cap_valid & rx_en;
+
+// RX: online QPSK demod debug branch. This taps the ADC capture stream before
+// the existing async FIFO/DMA path, so raw capture behavior remains unchanged.
+(* DONT_TOUCH = "true", keep_hierarchy = "yes" *) qpsk_rx_fixed_demod #(
+    .ADC_DW(ADC_DW),
+    .PHASE_W(24),
+    .NCO_W(12),
+    .MIX_W(24),
+    .SUM_W(32),
+    .CORR_W(24),
+    .SPS(50)
+) u_qpsk_rx_fixed_demod (
+    .clk(clk_adc),
+    .rst_n(rst_n_adc),
+    .en(rx_en),
+    .s_adc(cap_data[ADC_DW-1:0]),
+    .s_valid(cap_valid),
+    .s_ready(),
+    .cfg_phase_inc(QPSK_PHASE_INC_DEFAULT),
+    .m_sym(rx_demod_sym),
+    .m_valid(rx_demod_valid),
+    .m_lock(rx_demod_lock),
+    .dbg_i(rx_demod_dbg_i),
+    .dbg_q(rx_demod_dbg_q),
+    .dbg_best_phase(rx_demod_dbg_best_phase),
+    .dbg_phase_bin(rx_demod_dbg_phase_bin),
+    .dbg_lock_score(rx_demod_dbg_lock_score)
+);
 
 // RX: ADC -> AXI 跨时钟域
 stream_async_fifo #(

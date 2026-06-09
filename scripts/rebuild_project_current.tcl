@@ -32,6 +32,7 @@
 #    "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_symbol_mapper.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/RTL/source/qpsk_test_gen.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_tx_single_dac.v"
+#    "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_rx_fixed_demod.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/RTL/utils/reset_sync.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/signed_to_offset_dac.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/RTL/buffer/stream_async_fifo.v"
@@ -44,6 +45,7 @@
 #    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/sys_clk_ax7020.xdc"
 #    "D:/Project/ProjectVivado/Ez_QPSK/Sim/tb_pl_comm_top_fixed_cfg_loopback.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_tx_single_dac_min.v"
+#    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_loopback.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_tx_chain_min.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_tx_chain_min.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_rx_chain_min.v"
@@ -67,6 +69,7 @@ proc checkRequiredFiles { origin_dir} {
    "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_symbol_mapper.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/RTL/source/qpsk_test_gen.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_tx_single_dac.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_rx_fixed_demod.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/RTL/utils/reset_sync.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/signed_to_offset_dac.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/RTL/buffer/stream_async_fifo.v" \
@@ -79,6 +82,7 @@ proc checkRequiredFiles { origin_dir} {
    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/sys_clk_ax7020.xdc" \
    "D:/Project/ProjectVivado/Ez_QPSK/Sim/tb_pl_comm_top_fixed_cfg_loopback.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_tx_single_dac_min.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_loopback.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_tx_chain_min.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_tx_chain_min.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_rx_chain_min.v" \
@@ -265,6 +269,7 @@ set files [list \
  [file normalize "${origin_dir}/../RTL/modem/qpsk_symbol_mapper.v" ]\
  [file normalize "${origin_dir}/../RTL/source/qpsk_test_gen.v" ]\
  [file normalize "${origin_dir}/../RTL/modem/qpsk_tx_single_dac.v" ]\
+ [file normalize "${origin_dir}/../RTL/modem/qpsk_rx_fixed_demod.v" ]\
  [file normalize "${origin_dir}/../RTL/utils/reset_sync.v" ]\
  [file normalize "${origin_dir}/../RTL/modem/signed_to_offset_dac.v" ]\
  [file normalize "${origin_dir}/../RTL/buffer/stream_async_fifo.v" ]\
@@ -376,6 +381,18 @@ set_property -name "used_in_simulation" -value "1" -objects $file_obj
 set_property -name "used_in_synthesis" -value "1" -objects $file_obj
 
 set file "modem/qpsk_tx_single_dac.v"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+set_property -name "is_enabled" -value "1" -objects $file_obj
+set_property -name "is_global_include" -value "0" -objects $file_obj
+set_property -name "library" -value "xil_defaultlib" -objects $file_obj
+set_property -name "path_mode" -value "RelativeFirst" -objects $file_obj
+set_property -name "used_in" -value "synthesis implementation simulation" -objects $file_obj
+set_property -name "used_in_implementation" -value "1" -objects $file_obj
+set_property -name "used_in_simulation" -value "1" -objects $file_obj
+set_property -name "used_in_synthesis" -value "1" -objects $file_obj
+
+set file "modem/qpsk_rx_fixed_demod.v"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 set_property -name "is_enabled" -value "1" -objects $file_obj
@@ -567,6 +584,7 @@ set obj [get_filesets sim_1]
 set files [list \
  [file normalize "${origin_dir}/../Sim/tb_pl_comm_top_fixed_cfg_loopback.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_qpsk_tx_single_dac_min.v" ]\
+ [file normalize "${origin_dir}/../Sim/tb_qpsk_rx_demod_loopback.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_qpsk_tx_chain_min.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_tx_chain_min.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_rx_chain_min.v" ]\
@@ -590,6 +608,18 @@ set_property -name "used_in_simulation" -value "1" -objects $file_obj
 set_property -name "used_in_synthesis" -value "1" -objects $file_obj
 
 set file "Sim/tb_qpsk_tx_single_dac_min.v"
+set file_obj [get_files -of_objects [get_filesets sim_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+set_property -name "is_enabled" -value "1" -objects $file_obj
+set_property -name "is_global_include" -value "0" -objects $file_obj
+set_property -name "library" -value "xil_defaultlib" -objects $file_obj
+set_property -name "path_mode" -value "RelativeFirst" -objects $file_obj
+set_property -name "used_in" -value "synthesis implementation simulation" -objects $file_obj
+set_property -name "used_in_implementation" -value "1" -objects $file_obj
+set_property -name "used_in_simulation" -value "1" -objects $file_obj
+set_property -name "used_in_synthesis" -value "1" -objects $file_obj
+
+set file "Sim/tb_qpsk_rx_demod_loopback.v"
 set file_obj [get_files -of_objects [get_filesets sim_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 set_property -name "is_enabled" -value "1" -objects $file_obj
@@ -730,6 +760,9 @@ if { [get_files qpsk_test_gen.v] == "" } {
 }
 if { [get_files qpsk_tx_single_dac.v] == "" } {
   import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_tx_single_dac.v
+}
+if { [get_files qpsk_rx_fixed_demod.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_rx_fixed_demod.v
 }
 if { [get_files reset_sync.v] == "" } {
   import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/utils/reset_sync.v

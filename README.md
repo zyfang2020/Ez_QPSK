@@ -18,15 +18,15 @@
 3. 阶段 3：协议化数据输入  
    目标：确定链路协议，从上位机获取数据包并驱动调制发送。
 
-### 1.3 当前进度（当前处于阶段 1）
+### 1.3 当前进度（当前处于阶段 2 本地 loopback 验证）
 
 - 已完成：QPSK 调制链 RTL 实现与仿真验证（单板本地回环）。
 - 已完成：`qpsk_test_gen -> qpsk_tx_single_dac -> ad9762_driver` 单 DAC 发射链仿真验证。
 - 已完成：ADC 侧采集与 AXI 搬运通路 RTL 实现（`ad9215_capture -> stream_async_fifo -> stream_pkt_gen -> axis_to_dma_pkt`）。
 - 已完成：顶层“无板数字回环”仿真验证，确认 `DAC -> 本地回环 ADC -> RX AXIS` 数据链与 `tlast` 行为正确。
-- 当前策略：先把采样数据搬运到 DDR，再导出到电脑做离线解调。
-- 当前工程定位：作为阶段 1 基础链路工程，负责调制发射、接收采集与 DMA 搬运基础设施。
-- 未完成：上板联调、在线解调闭环、协议化上位机数据接入。
+- 已完成：新增 PL 侧 `qpsk_rx_fixed_demod` 在线解调分支，并通过本地 TX loopback 仿真恢复 Gray 序列。
+- 当前工程定位：保留原 BD/PS/DMA 主结构，在 ADC capture 后并联在线解调 debug 支路。
+- 未完成：外部 QPSK 发射机输入下的完整载波/相位/定时恢复，上板联调，协议化上位机数据接入。
 
 ### 1.4 阶段 1 验收口径
 
@@ -42,6 +42,8 @@
   `qpsk_test_gen 或外部 qpsk_sym_* -> qpsk_tx_single_dac -> ad9762_driver -> DAC`
 - RX 最小链路（当前以搬运为主）  
   `AD9215 -> ad9215_capture -> stream_async_fifo -> stream_pkt_gen -> axis_to_dma_pkt -> AXI DMA S2MM -> PS DDR -> PC 离线解调`
+- RX 在线解调 debug 支路
+  `ad9215_capture -> qpsk_rx_fixed_demod -> rx_demod_sym/valid/lock`
 
 ### 2.2 时钟与复位
 
@@ -64,6 +66,7 @@
   - `tx_en=0` 时，DAC 输出回零（`ad9762_driver` 配置 `HOLD_LAST=0`）。
   - TX 源支持 `tx_test_pattern` 与 QPSK 调制链选择（`tx_src_sel`）。
   - QPSK 输入支持内部测试源与外部符号口选择（`qpsk_src_sel`）。
+  - ADC capture 后并联 `qpsk_rx_fixed_demod`，输出 `rx_demod_sym/valid/lock` 供仿真和后续 ILA/J11 调试使用。
 - 固定配置封装：`RTL/top/pl_comm_top_fixed_cfg.v`
   - 当前用于最小 bring-up：固定走 QPSK 内部测试发送路径。
 
@@ -71,7 +74,7 @@
 
 - `RTL/`：可综合 RTL 源码根目录。
 - `RTL/top/`：顶层集成与固定配置封装（如 `pl_comm_top*`）。
-- `RTL/modem/`：QPSK 调制链相关模块（映射、成型、上变频、DAC 格式转换）。
+- `RTL/modem/`：QPSK 调制/解调链相关模块（映射、成型、上变频、DDC/判决、DAC 格式转换）。
 - `RTL/drivers/`：器件与总线侧驱动/适配（AD9215、AD9762、AXIS 适配）。
 - `RTL/source/`：测试数据源/激励源模块（`tx_test_pattern`、`qpsk_test_gen`）。
 - `RTL/buffer/`：跨时钟域缓冲模块（异步 FIFO）。
@@ -90,16 +93,16 @@
 - `Sim/tb_rx_chain_min.v`：ADC 到 AXI 打包搬运链。
 - `Sim/tb_qpsk_tx_chain_min.v`：legacy QPSK 发射链。
 - `Sim/tb_qpsk_tx_single_dac_min.v`：推荐 QPSK 单 DAC 发射链（可导出 CSV）。
+- `Sim/tb_qpsk_rx_demod_loopback.v`：stage-2 本地 TX loopback 在线解调验证。
 - 离线脚本：`Tool/matlab/qpsk_single_dac_demod_demo.m`（读取 CSV 做离线解调示例）。
 
 ### 2.6 当前注意事项
 
-- 当前文档口径为“阶段 1：离线解调优先”，不宣称在线解调已完成。
-- 当前“ADC->AXI->DDR”链路重点是可搬运、可观测、可导出。
+- 当前在线解调已覆盖本地固定 Gray loopback 仿真，不等同于外部发射机全场景锁定。
+- 当前“ADC->AXI->DDR”链路仍保留，在线解调支路不替代原始采样搬运。
 - `qpsk_sym_*` 为后续协议化输入预留接口，当前主要使用内部 `qpsk_test_gen`。
 - RX 侧 AXIS 口通常在 Vivado BD 内连接 DMA，不作为外部引脚导出。
-- 当前主线工程暂不提前并入接收端在线解调逻辑，避免在阶段 1 过早引入复杂度与综合负担。
-- 后续进入阶段 2 时，建议以当前工程为稳定基线，在新分支或 fork 上扩展接收端解调功能。
+- 外部 QPSK 输入仍需要继续升级 Costas/decision-directed 相位环和 Gardner/early-late 定时恢复。
 
 ### 2.7 本机 Xilinx 工具版本（Windows）
 
@@ -116,6 +119,8 @@
   - `D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat -mode batch -source scripts/run_qpsk_tx_single_dac_sim.tcl`
 - PowerShell 等价命令：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_tx_single_dac_sim.tcl`
+- 运行 stage-2 RX demod 本地 loopback 仿真：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_loopback_sim.tcl`
 
 ### 2.8 Vivado 工程重建脚本
 
@@ -144,7 +149,7 @@
 注意：
 
 - Git 只保证恢复入库源码、约束、脚本和说明文件；Vivado 生成目录、bitstream、XSA、Vitis 工作区不作为源码基线。
-- `scripts/run_qpsk_tx_single_dac_sim.tcl` 需要已有 `Ez_QPSK.xpr`，所以干净 checkout 后应先运行重建脚本，再运行该仿真脚本。
+- `scripts/run_qpsk_tx_single_dac_sim.tcl` 与 `scripts/run_qpsk_rx_demod_loopback_sim.tcl` 需要已有 `Ez_QPSK.xpr`，所以干净 checkout 后应先运行重建脚本，再运行仿真脚本。
 - 如果只是在当前工作树里回退源码，但没有清理旧生成物，Vivado 可能继续看到旧的缓存或旧 BD 输出；做可复现实验时优先使用干净 clone 或清理生成目录。
 
 ## 3. 规范与标准
@@ -197,9 +202,9 @@
 - 显式声明异步时钟组，避免错误跨域收敛。
 - 顶层控制口（`*_en/*_sel/*_cfg`）必须有明确驱动来源，禁止悬空。
 
-### 3.6 当前阶段下一步（对齐阶段 1）
+### 3.6 当前阶段下一步（对齐阶段 2）
 
-1. 完成板端 DMA S2MM + DDR 搬运联调与稳定性验证。
-2. 建立导出数据到 PC 的自动化流程（原始数据与元信息）。
-3. 固化离线解调判据（频偏、相位恢复、EVM/BER 统计口径）。
-4. 在离线闭环稳定后进入阶段 2（在线解调）。
+1. 把 `rx_demod_sym/valid/lock` 接入 ILA 或临时 J11 debug 引脚，做上板可观测验证。
+2. 针对外部 QPSK 输入补 Costas/decision-directed 相位跟踪与 Gardner/early-late 定时恢复。
+3. 保留 ADC 原始样本 DMA 搬运，用离线脚本交叉验证在线判决。
+4. 后续再进入协议化上位机数据输入与误码统计闭环。

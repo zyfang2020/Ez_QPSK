@@ -44,6 +44,10 @@ module pl_comm_top_fixed_cfg #(
     localparam [1:0] QPSK_MODE_SEL_FIXED = 2'd0;
     localparam [1:0] QPSK_CFG_SYM_FIXED  = 2'b00;
 
+    (* keep = "true", mark_debug = "true" *) wire [1:0] rx_demod_sym_dbg;
+    (* keep = "true", mark_debug = "true" *) wire       rx_demod_valid_dbg;
+    (* keep = "true", mark_debug = "true" *) wire       rx_demod_lock_dbg;
+
     pl_comm_top #(
         .ADC_DW(ADC_DW),
         .DAC_DW(DAC_DW),
@@ -70,6 +74,9 @@ module pl_comm_top_fixed_cfg #(
         .qpsk_sym_data(2'b00),
         .qpsk_sym_valid(1'b0),
         .qpsk_sym_ready(),
+        .rx_demod_sym(rx_demod_sym_dbg),
+        .rx_demod_valid(rx_demod_valid_dbg),
+        .rx_demod_lock(rx_demod_lock_dbg),
         .m_axis_rx_tdata(m_axis_rx_tdata),
         .m_axis_rx_tkeep(m_axis_rx_tkeep),
         .m_axis_rx_tvalid(m_axis_rx_tvalid),
