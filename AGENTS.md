@@ -15,6 +15,17 @@
   - First acceptance target is simulation: local TX loopback can be demodulated in RTL simulation.
   - Later target is external QPSK input at a fixed carrier frequency.
 
+## Git / Branch Discipline
+
+- Work only on the current branch `Part2` unless the user explicitly asks for a branch change.
+- Do not switch to, merge into, rebase, reset, or otherwise modify `main` during this stage.
+- It is OK for Codex to create local commits on `Part2` at verified stage milestones when the user asks for checkpoint commits or when a coherent milestone is complete.
+- Before committing:
+  - Re-check `git status --short --branch` and confirm the branch is `Part2`.
+  - Keep generated Vivado/Vitis artifacts out of Git unless the user explicitly asks for release artifacts.
+  - Prefer committing source, constraints, scripts, and documentation needed to reproduce the milestone.
+- Keep commit messages concise and stage-focused, for example `stage2: add qpsk rx demod debug flow`.
+
 ## Stage-2 Goal
 
 Implement a PL-side QPSK demodulation path while preserving the current TX and BD structure.
@@ -72,6 +83,31 @@ Preflight result on 2026-06-09:
 
 For future automated work, run Vivado batch commands with escalation if the same `.hdi.isWriteableTest` permission failure appears. The command is not a code problem.
 
+## PS / XSA / Vitis Notes
+
+- Because the PL sample clock path depends on PS `FCLK_CLK0`, board bring-up needs PS initialization, not only raw PL bitstream download.
+- After a PL milestone that affects the exported hardware, refresh the PS-side hardware platform:
+  1. Set the intended board mode. For local analog loopback, use `loopback` (`FIXED_TX_EN=1`, `FIXED_RX_EN=1`). For a purely external ADC source, use `external_rx` (`FIXED_TX_EN=0`, `FIXED_RX_EN=1`).
+  2. Generate the matching bitstream when the PL image changed.
+  3. Export/update XSA with `scripts/export_current_xsa.tcl`; use `-include-bit` only after the matching implementation bitstream is available.
+  4. Rebuild or refresh the Vitis platform/application from that XSA.
+- A command-line smoke test is available:
+
+```powershell
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/test_vitis_xsa_build.tcl artifacts\xsa\Ez_QPSK_current.xsa Vitis_WS\codex_xsa_smoke_current
+```
+
+- The smoke test intentionally writes under ignored `Vitis_WS/`, regenerates standalone BSP/FSBL from the XSA, and links `sw/baremetal_dma_rx/main.c` into a temporary ELF.
+- Vitis 2020.2 command-line `app create` / app-template discovery can hang in this environment; the smoke script avoids that path and uses the generated BSP plus ARM GCC directly.
+- The generated standalone BSP should use `ps7_uart_1` for stdin/stdout when UART export is needed.
+
+## Board Bring-up Preference
+
+- For the next hardware validation step, prefer local analog loopback first:
+  `PL TX -> DAC -> external filter/analog path -> ADC -> PL RX demod`.
+- This requires both DA and AD paths to be working and uses `loopback` mode with TX and RX enabled.
+- After local analog loopback is stable, switch to `external_rx` mode for a separate external QPSK transmitter feeding the ADC.
+
 ## Simulation Status
 
 `scripts/run_qpsk_tx_single_dac_sim.tcl` was repaired on 2026-06-09:
@@ -93,4 +129,5 @@ Remaining note: the RTL modules still emit XSim timescale warnings because sever
 5. Add a focused loopback testbench that validates recovered QPSK symbols.
 6. Run the new simulation in Vivado batch and make the script fail nonzero on `[FAIL]`.
 7. Run synthesis, then implementation/timing if simulation passes.
-8. Update README/Sim docs only with concise stage-2 usage notes.
+8. Export/update XSA and run the Vitis smoke test when the milestone will be used on board.
+9. Update README/Sim/sw docs only with concise stage-2 usage notes.

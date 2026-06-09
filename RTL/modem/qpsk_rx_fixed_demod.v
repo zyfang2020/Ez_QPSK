@@ -2,13 +2,19 @@
 // Module: qpsk_rx_fixed_demod
 // Function: Fixed-carrier QPSK receive demodulator for stage-2 PL loopback.
 // Chain:
-//   unsigned ADC -> centered/DC-removed -> fixed NCO DDC -> moving-average LPF
+//   unsigned ADC -> centered/DC-removed -> NCO DDC -> moving-average LPF
 //   -> coarse SPS timing phase select -> Gray-cycle phase/quality tracking
 //   -> hard QPSK decisions
 // Notes:
 //   - The first local-test mode assumes the known Gray cycle 00->01->11->10
 //     for lock/phase quality. The DDC/timing blocks are kept separate so the
 //     phase tracker can later be replaced by a Costas or decision-directed loop.
+//   - A delayed blind quality path is also present for external sources that do
+//     not send the local Gray test cycle; it locks on constellation confidence
+//     and decision-directed phase error after pattern acquisition has timed out.
+//   - A bounded decision-directed frequency trim nudges the DDC NCO when the
+//     phase tracker keeps stepping in one direction, improving external-carrier
+//     tolerance without changing the fixed-frequency configuration interface.
 // -----------------------------------------------------------------------------
 module qpsk_rx_fixed_demod #(
     parameter integer ADC_DW = 10,
@@ -42,7 +48,8 @@ module qpsk_rx_fixed_demod #(
     output reg  signed [15:0]      dbg_q,
     output reg  [5:0]              dbg_best_phase,
     output reg  [3:0]              dbg_phase_bin,
-    output reg  [7:0]              dbg_lock_score
+    output reg  [7:0]              dbg_lock_score,
+    output wire signed [15:0]      dbg_nco_freq_corr
 );
 
 localparam integer ADC_SIGNED_W = ADC_DW + 1;
@@ -51,6 +58,27 @@ localparam integer ROT_W = SUM_W + NCO_W + 1;
 localparam integer PHASE_EST_W = 18;
 localparam integer PHASE_EST_SHIFT = 6;
 localparam integer PHASE_DOT_W = PHASE_EST_W + NCO_W + 1;
+localparam signed [4:0] TIMING_TRACK_LIMIT = 5'sd1;
+localparam integer TIMING_TRACK_DEADBAND = 8;
+localparam signed [17:0] DD_ERR_DEADBAND = 18'sd12;
+localparam signed [12:0] DD_ACC_LIMIT = 13'sd96;
+localparam integer DD_ERR_SHIFT = 4;
+localparam integer FREQ_CORR_W = 16;
+localparam signed [FREQ_CORR_W-1:0] FREQ_CORR_STEP = 16'sd16;
+localparam signed [FREQ_CORR_W-1:0] FREQ_CORR_MAX = 16'sd8192;
+localparam signed [FREQ_CORR_W-1:0] FREQ_CORR_MIN = -16'sd8192;
+localparam signed [FREQ_CORR_W-1:0] ACQ_FREQ_STEP = 16'sd512;
+localparam signed [FREQ_CORR_W-1:0] ACQ_FREQ_MAX = 16'sd4096;
+localparam [4:0] ACQ_FREQ_LAST_IDX = 5'd16;
+localparam [7:0] ACQ_FREQ_DWELL_SYMS = 8'd192;
+localparam [15:0] BLIND_ACQ_DELAY_SYMS = 16'd128;
+localparam [15:0] BLIND_MIN_ABS = 16'd24;
+localparam [17:0] BLIND_ERR_LIMIT = 18'd96;
+localparam [7:0] BLIND_LOCK_THRESHOLD = 8'd80;
+localparam [7:0] BLIND_RELEASE_LEVEL = 8'd40;
+localparam [7:0] LOCK_RELEASE_LEVEL = (LOCK_THRESHOLD > 16) ?
+                                      (LOCK_THRESHOLD[7:0] - 8'd8) :
+                                      (LOCK_THRESHOLD[7:0] >> 1);
 localparam [ADC_SIGNED_W-1:0] ADC_MID = (1 << (ADC_DW-1));
 localparam [1:0] TRACK_IDLE   = 2'd0;
 localparam [1:0] TRACK_OFFSET = 2'd1;
@@ -59,6 +87,9 @@ localparam [1:0] TRACK_ANGLE  = 2'd3;
 
 reg [PHASE_W-1:0] phase_acc;
 reg [5:0] sample_phase;
+(* keep = "true", mark_debug = "true" *) reg signed [FREQ_CORR_W-1:0] nco_freq_corr;
+reg [4:0] acq_freq_idx;
+reg [7:0] acq_freq_dwell;
 reg [7:0] timing_epoch_cnt;
 reg timing_ready;
 reg [5:0] best_phase;
@@ -67,6 +98,13 @@ reg [5:0] epoch_best_phase;
 reg [TIMING_W-1:0] metric_d;
 reg [5:0] phase_d;
 reg metric_valid_d;
+reg signed [SUM_W-1:0] metric_sum_i;
+reg signed [SUM_W-1:0] metric_sum_q;
+reg [5:0] metric_phase;
+reg metric_src_valid;
+reg signed [4:0] timing_track_acc;
+reg [TIMING_W-1:0] timing_early_metric;
+reg timing_early_valid;
 
 reg signed [DC_W-1:0] dc_avg;
 reg signed [MIX_W-1:0] hist_i [0:SPS-1];
@@ -85,6 +123,9 @@ reg signed [CORR_W-1:0] corr_q [0:3];
 reg [1:0] best_offset;
 reg [3:0] phase_bin;
 reg [7:0] lock_score;
+reg track_locked;
+reg [7:0] blind_lock_score;
+reg blind_locked;
 reg [1:0] tracker_state;
 reg [4:0] tracker_idx;
 reg [CORR_W-1:0] scan_best_mag;
@@ -108,11 +149,17 @@ reg signed [CORR_W-1:0] corr_i_in_q;
 reg signed [CORR_W-1:0] corr_q_in_q;
 reg [1:0] corr_sym_base_q;
 reg corr_update_pending;
+reg signed [12:0] dd_phase_acc;
 
 integer n;
 
 reg signed [CORR_W-1:0] corr_re_term;
 reg signed [CORR_W-1:0] corr_im_term;
+reg [5:0] epoch_winner_phase;
+reg [5:0] timing_phase_delta;
+reg signed [4:0] timing_acc_next;
+reg [7:0] lock_score_next;
+reg [7:0] blind_score_next;
 reg [1:0] exp_sym_tmp;
 reg [1:0] exp_lock_sym;
 reg [CORR_W-1:0] corr_mag_tmp;
@@ -126,6 +173,10 @@ wire signed [DC_W-1:0] dc_term;
 wire signed [DC_W-1:0] adc_hp;
 
 wire [3:0] nco_idx;
+wire signed [PHASE_W:0] phase_inc_base_ext;
+wire signed [PHASE_W:0] phase_inc_corr_ext;
+wire signed [PHASE_W:0] phase_inc_sum;
+wire [PHASE_W-1:0] phase_inc_eff;
 wire signed [NCO_W-1:0] cos_val;
 wire signed [NCO_W-1:0] sin_val;
 wire signed [DC_W+NCO_W-1:0] mul_i_wide;
@@ -156,8 +207,26 @@ wire sample_symbol;
 wire signed [PHASE_EST_W+NCO_W-1:0] phase_dot_re_wide;
 wire signed [PHASE_EST_W+NCO_W-1:0] phase_dot_im_wide;
 wire signed [PHASE_DOT_W-1:0] phase_dot_now;
+wire signed [15:0] dd_i_now;
+wire signed [15:0] dd_q_now;
+wire signed [16:0] dd_i_ext;
+wire signed [16:0] dd_q_ext;
+wire signed [16:0] dd_isign_q;
+wire signed [16:0] dd_qsign_i;
+wire signed [17:0] dd_phase_err;
+wire signed [12:0] dd_phase_step;
+wire [15:0] dd_abs_i;
+wire [15:0] dd_abs_q;
+wire [15:0] dd_min_abs;
+wire [17:0] dd_abs_phase_err;
+wire blind_train_active;
+wire decision_track_active;
+wire blind_symbol_confident;
+
+reg signed [12:0] dd_acc_next;
 
 assign s_ready = 1'b1;
+assign dbg_nco_freq_corr = nco_freq_corr;
 assign sample_accept = en && s_valid;
 assign sample_proc_accept = en && sample_valid_q;
 
@@ -168,6 +237,10 @@ assign dc_term = dc_avg >>> DC_FRAC;
 assign adc_hp = {{(DC_W-ADC_SIGNED_W){adc_centered[ADC_SIGNED_W-1]}}, adc_centered} - dc_term;
 
 assign nco_idx = phase_acc[PHASE_W-1 -: 4];
+assign phase_inc_base_ext = {1'b0, cfg_phase_inc};
+assign phase_inc_corr_ext = {{(PHASE_W+1-FREQ_CORR_W){nco_freq_corr[FREQ_CORR_W-1]}}, nco_freq_corr};
+assign phase_inc_sum = phase_inc_base_ext + phase_inc_corr_ext;
+assign phase_inc_eff = phase_inc_sum[PHASE_W-1:0];
 assign cos_val = cos_lut(nco_idx);
 assign sin_val = sin_lut(nco_idx);
 
@@ -182,8 +255,8 @@ assign hist_i_ext = {{(SUM_W-MIX_W){hist_i[sample_phase][MIX_W-1]}}, hist_i[samp
 assign hist_q_ext = {{(SUM_W-MIX_W){hist_q[sample_phase][MIX_W-1]}}, hist_q[sample_phase]};
 assign sum_i_next = sum_i + mix_i_ext - hist_i_ext;
 assign sum_q_next = sum_q + mix_q_ext - hist_q_ext;
-assign abs_sum_i = abs_sum(sum_i_next);
-assign abs_sum_q = abs_sum(sum_q_next);
+assign abs_sum_i = abs_sum(metric_sum_i);
+assign abs_sum_q = abs_sum(metric_sum_q);
 assign timing_metric = (abs_sum_i >> TIMING_METRIC_SHIFT) +
                        (abs_sum_q >> TIMING_METRIC_SHIFT);
 
@@ -205,6 +278,24 @@ assign phase_dot_re_wide = phase_scan_re * cos_lut(tracker_idx[3:0]);
 assign phase_dot_im_wide = phase_scan_im * sin_lut(tracker_idx[3:0]);
 assign phase_dot_now = {{1{phase_dot_re_wide[PHASE_EST_W+NCO_W-1]}}, phase_dot_re_wide} +
                        {{1{phase_dot_im_wide[PHASE_EST_W+NCO_W-1]}}, phase_dot_im_wide};
+assign dd_i_now = rot_i_reg >>> (NCO_W + 4);
+assign dd_q_now = rot_q_reg >>> (NCO_W + 4);
+assign dd_i_ext = {dd_i_now[15], dd_i_now};
+assign dd_q_ext = {dd_q_now[15], dd_q_now};
+assign dd_isign_q = dec_sym_done[0] ? -dd_q_ext : dd_q_ext;
+assign dd_qsign_i = dec_sym_done[1] ? -dd_i_ext : dd_i_ext;
+assign dd_phase_err = {dd_isign_q[16], dd_isign_q} -
+                      {dd_qsign_i[16], dd_qsign_i};
+assign dd_phase_step = dd_phase_err >>> DD_ERR_SHIFT;
+assign dd_abs_i = abs16(dd_i_now);
+assign dd_abs_q = abs16(dd_q_now);
+assign dd_min_abs = (dd_abs_i < dd_abs_q) ? dd_abs_i : dd_abs_q;
+assign dd_abs_phase_err = abs18(dd_phase_err);
+assign blind_train_active = timing_ready && (!track_locked) &&
+                            (sym_count >= BLIND_ACQ_DELAY_SYMS);
+assign decision_track_active = track_locked || blind_locked || blind_train_active;
+assign blind_symbol_confident = (dd_min_abs >= BLIND_MIN_ABS) &&
+                                (dd_abs_phase_err <= BLIND_ERR_LIMIT);
 
 generate
     if (SPS != 50) begin : g_sps_not_supported
@@ -285,6 +376,20 @@ function [CORR_W-1:0] abs_corr;
     end
 endfunction
 
+function [15:0] abs16;
+    input signed [15:0] x;
+    begin
+        abs16 = x[15] ? (~x + 16'd1) : x;
+    end
+endfunction
+
+function [17:0] abs18;
+    input signed [17:0] x;
+    begin
+        abs18 = x[17] ? (~x + 18'd1) : x;
+    end
+endfunction
+
 function [1:0] gray_seq4;
     input [1:0] idx;
     begin
@@ -295,6 +400,62 @@ function [1:0] gray_seq4;
             2'd3: gray_seq4 = 2'b10;
             default: gray_seq4 = 2'b00;
         endcase
+    end
+endfunction
+
+function [5:0] phase_next;
+    input [5:0] phase;
+    begin
+        if (phase == (SPS - 1)) begin
+            phase_next = 6'd0;
+        end else begin
+            phase_next = phase + 6'd1;
+        end
+    end
+endfunction
+
+function [5:0] phase_prev;
+    input [5:0] phase;
+    begin
+        if (phase == 6'd0) begin
+            phase_prev = SPS - 1;
+        end else begin
+            phase_prev = phase - 6'd1;
+        end
+    end
+endfunction
+
+function [5:0] phase_forward_delta;
+    input [5:0] from_phase;
+    input [5:0] to_phase;
+    begin
+        if (to_phase >= from_phase) begin
+            phase_forward_delta = to_phase - from_phase;
+        end else begin
+            phase_forward_delta = to_phase + SPS - from_phase;
+        end
+    end
+endfunction
+
+function signed [FREQ_CORR_W-1:0] acq_freq_value;
+    input [4:0] idx;
+    reg [4:0] mag_idx;
+    reg signed [FREQ_CORR_W-1:0] mag;
+    begin
+        if (idx == 5'd0) begin
+            acq_freq_value = {FREQ_CORR_W{1'b0}};
+        end else begin
+            mag_idx = (idx + 5'd1) >> 1;
+            mag = $signed({1'b0, mag_idx}) * ACQ_FREQ_STEP;
+            if (mag > ACQ_FREQ_MAX) begin
+                mag = ACQ_FREQ_MAX;
+            end
+            if (idx[0]) begin
+                acq_freq_value = mag;
+            end else begin
+                acq_freq_value = -mag;
+            end
+        end
     end
 endfunction
 
@@ -317,6 +478,9 @@ always @(posedge clk) begin
     if (!rst_n) begin
         phase_acc        <= {PHASE_W{1'b0}};
         sample_phase     <= 6'd0;
+        nco_freq_corr    <= {FREQ_CORR_W{1'b0}};
+        acq_freq_idx     <= 5'd0;
+        acq_freq_dwell   <= 8'd0;
         timing_epoch_cnt <= 8'd0;
         timing_ready     <= 1'b0;
         best_phase       <= 6'd0;
@@ -325,6 +489,13 @@ always @(posedge clk) begin
         metric_d         <= {TIMING_W{1'b0}};
         phase_d          <= 6'd0;
         metric_valid_d   <= 1'b0;
+        metric_sum_i     <= {SUM_W{1'b0}};
+        metric_sum_q     <= {SUM_W{1'b0}};
+        metric_phase     <= 6'd0;
+        metric_src_valid <= 1'b0;
+        timing_track_acc <= 5'sd0;
+        timing_early_metric <= {TIMING_W{1'b0}};
+        timing_early_valid <= 1'b0;
         dc_avg           <= {DC_W{1'b0}};
         sum_i            <= {SUM_W{1'b0}};
         sum_q            <= {SUM_W{1'b0}};
@@ -337,6 +508,9 @@ always @(posedge clk) begin
         best_offset      <= 2'd0;
         phase_bin        <= 4'd0;
         lock_score       <= 8'd0;
+        track_locked     <= 1'b0;
+        blind_lock_score <= 8'd0;
+        blind_locked     <= 1'b0;
         tracker_state    <= TRACK_IDLE;
         tracker_idx      <= 5'd0;
         scan_best_mag    <= {CORR_W{1'b0}};
@@ -360,6 +534,7 @@ always @(posedge clk) begin
         corr_q_in_q      <= {CORR_W{1'b0}};
         corr_sym_base_q  <= 2'b00;
         corr_update_pending <= 1'b0;
+        dd_phase_acc     <= 13'sd0;
         m_sym            <= 2'b00;
         m_valid          <= 1'b0;
         m_lock           <= 1'b0;
@@ -379,6 +554,9 @@ always @(posedge clk) begin
     end else if (!en) begin
         phase_acc        <= {PHASE_W{1'b0}};
         sample_phase     <= 6'd0;
+        nco_freq_corr    <= {FREQ_CORR_W{1'b0}};
+        acq_freq_idx     <= 5'd0;
+        acq_freq_dwell   <= 8'd0;
         timing_epoch_cnt <= 8'd0;
         timing_ready     <= 1'b0;
         best_phase       <= 6'd0;
@@ -387,6 +565,13 @@ always @(posedge clk) begin
         metric_d         <= {TIMING_W{1'b0}};
         phase_d          <= 6'd0;
         metric_valid_d   <= 1'b0;
+        metric_sum_i     <= {SUM_W{1'b0}};
+        metric_sum_q     <= {SUM_W{1'b0}};
+        metric_phase     <= 6'd0;
+        metric_src_valid <= 1'b0;
+        timing_track_acc <= 5'sd0;
+        timing_early_metric <= {TIMING_W{1'b0}};
+        timing_early_valid <= 1'b0;
         dc_avg           <= {DC_W{1'b0}};
         sum_i            <= {SUM_W{1'b0}};
         sum_q            <= {SUM_W{1'b0}};
@@ -399,6 +584,9 @@ always @(posedge clk) begin
         best_offset      <= 2'd0;
         phase_bin        <= 4'd0;
         lock_score       <= 8'd0;
+        track_locked     <= 1'b0;
+        blind_lock_score <= 8'd0;
+        blind_locked     <= 1'b0;
         tracker_state    <= TRACK_IDLE;
         tracker_idx      <= 5'd0;
         scan_best_mag    <= {CORR_W{1'b0}};
@@ -422,6 +610,7 @@ always @(posedge clk) begin
         corr_q_in_q      <= {CORR_W{1'b0}};
         corr_sym_base_q  <= 2'b00;
         corr_update_pending <= 1'b0;
+        dd_phase_acc     <= 13'sd0;
         m_sym            <= 2'b00;
         m_valid          <= 1'b0;
         m_lock           <= 1'b0;
@@ -471,7 +660,7 @@ always @(posedge clk) begin
 
         if (sample_proc_accept) begin
             dc_avg <= dc_avg + (dc_err >>> DC_SHIFT);
-            phase_acc <= phase_acc + cfg_phase_inc;
+            phase_acc <= phase_acc + phase_inc_eff;
             mix_i_d <= mix_i;
             mix_q_d <= mix_q;
             mix_valid <= 1'b1;
@@ -485,24 +674,128 @@ always @(posedge clk) begin
 
         if (rot_dec_valid) begin
             exp_lock_sym = rot_exp_sym_d;
+            lock_score_next = lock_score;
             if (dec_sym_done == exp_lock_sym) begin
                 if (lock_score != 8'hff) begin
-                    lock_score <= lock_score + 8'd1;
+                    lock_score_next = lock_score + 8'd1;
                 end
             end else begin
                 if (lock_score != 8'd0) begin
-                    lock_score <= lock_score - 8'd1;
+                    lock_score_next = lock_score - 8'd1;
                 end
+            end
+            lock_score <= lock_score_next;
+
+            if (lock_score_next >= LOCK_THRESHOLD[7:0]) begin
+                track_locked <= 1'b1;
+            end else if (lock_score_next <= LOCK_RELEASE_LEVEL) begin
+                track_locked <= 1'b0;
+            end
+
+            blind_score_next = blind_lock_score;
+            if (blind_train_active || blind_locked) begin
+                if (blind_symbol_confident) begin
+                    if (blind_lock_score != 8'hff) begin
+                        blind_score_next = blind_lock_score + 8'd1;
+                    end
+                end else if (blind_lock_score > 8'd1) begin
+                    blind_score_next = blind_lock_score - 8'd2;
+                end else begin
+                    blind_score_next = 8'd0;
+                end
+            end else begin
+                blind_score_next = 8'd0;
+            end
+            blind_lock_score <= blind_score_next;
+
+            if (blind_score_next >= BLIND_LOCK_THRESHOLD) begin
+                blind_locked <= 1'b1;
+            end else if (blind_score_next <= BLIND_RELEASE_LEVEL) begin
+                blind_locked <= 1'b0;
             end
 
             m_sym   <= dec_sym_done;
             m_valid <= 1'b1;
-            m_lock  <= (lock_score >= LOCK_THRESHOLD[7:0]);
+            m_lock  <= track_locked || (lock_score_next >= LOCK_THRESHOLD[7:0]) ||
+                       blind_locked || (blind_score_next >= BLIND_LOCK_THRESHOLD);
             dbg_i   <= rot_i_reg >>> (NCO_W + 4);
             dbg_q   <= rot_q_reg >>> (NCO_W + 4);
             sym_count <= sym_count + 16'd1;
+
+            if (decision_track_active || (lock_score_next >= LOCK_THRESHOLD[7:0]) ||
+                (blind_score_next >= BLIND_LOCK_THRESHOLD)) begin
+                dd_acc_next = dd_phase_acc;
+                if (dd_phase_err > DD_ERR_DEADBAND) begin
+                    dd_acc_next = dd_phase_acc + dd_phase_step;
+                end else if (dd_phase_err < -DD_ERR_DEADBAND) begin
+                    dd_acc_next = dd_phase_acc + dd_phase_step;
+                end else if (dd_phase_acc > 13'sd0) begin
+                    dd_acc_next = dd_phase_acc - 13'sd1;
+                end else if (dd_phase_acc < 13'sd0) begin
+                    dd_acc_next = dd_phase_acc + 13'sd1;
+                end
+
+                if (dd_acc_next >= DD_ACC_LIMIT) begin
+                    phase_bin <= phase_bin + 4'd1;
+                    dd_phase_acc <= dd_acc_next - DD_ACC_LIMIT;
+                    if (track_locked || blind_locked ||
+                        (lock_score_next >= LOCK_THRESHOLD[7:0]) ||
+                        (blind_score_next >= BLIND_LOCK_THRESHOLD)) begin
+                        if (nco_freq_corr <= (FREQ_CORR_MAX - FREQ_CORR_STEP)) begin
+                            nco_freq_corr <= nco_freq_corr + FREQ_CORR_STEP;
+                        end else begin
+                            nco_freq_corr <= FREQ_CORR_MAX;
+                        end
+                    end
+                end else if (dd_acc_next <= -DD_ACC_LIMIT) begin
+                    phase_bin <= phase_bin - 4'd1;
+                    dd_phase_acc <= dd_acc_next + DD_ACC_LIMIT;
+                    if (track_locked || blind_locked ||
+                        (lock_score_next >= LOCK_THRESHOLD[7:0]) ||
+                        (blind_score_next >= BLIND_LOCK_THRESHOLD)) begin
+                        if (nco_freq_corr >= (FREQ_CORR_MIN + FREQ_CORR_STEP)) begin
+                            nco_freq_corr <= nco_freq_corr - FREQ_CORR_STEP;
+                        end else begin
+                            nco_freq_corr <= FREQ_CORR_MIN;
+                        end
+                    end
+                end else begin
+                    dd_phase_acc <= dd_acc_next;
+                end
+            end else begin
+                dd_phase_acc <= 13'sd0;
+                nco_freq_corr <= {FREQ_CORR_W{1'b0}};
+            end
+
+            if (blind_train_active && !track_locked && !blind_locked &&
+                (lock_score_next < LOCK_THRESHOLD[7:0]) &&
+                (blind_score_next < BLIND_LOCK_THRESHOLD)) begin
+                if (acq_freq_dwell >= (ACQ_FREQ_DWELL_SYMS - 8'd1)) begin
+                    acq_freq_dwell <= 8'd0;
+                    blind_lock_score <= 8'd0;
+                    dd_phase_acc <= 13'sd0;
+                    if (acq_freq_idx >= ACQ_FREQ_LAST_IDX) begin
+                        acq_freq_idx <= 5'd0;
+                        nco_freq_corr <= acq_freq_value(5'd0);
+                    end else begin
+                        acq_freq_idx <= acq_freq_idx + 5'd1;
+                        nco_freq_corr <= acq_freq_value(acq_freq_idx + 5'd1);
+                    end
+                end else begin
+                    acq_freq_dwell <= acq_freq_dwell + 8'd1;
+                    nco_freq_corr <= acq_freq_value(acq_freq_idx);
+                end
+            end else if (track_locked || blind_locked ||
+                         (lock_score_next >= LOCK_THRESHOLD[7:0]) ||
+                         (blind_score_next >= BLIND_LOCK_THRESHOLD)) begin
+                acq_freq_idx <= 5'd0;
+                acq_freq_dwell <= 8'd0;
+            end else if (!blind_train_active) begin
+                acq_freq_idx <= 5'd0;
+                acq_freq_dwell <= 8'd0;
+            end
         end else begin
-            m_lock <= (lock_score >= LOCK_THRESHOLD[7:0]);
+            m_lock <= track_locked || blind_locked;
         end
 
         if (mix_valid) begin
@@ -510,6 +803,10 @@ always @(posedge clk) begin
             hist_q[sample_phase] <= mix_q_d;
             sum_i <= sum_i_next;
             sum_q <= sum_q_next;
+            metric_sum_i <= sum_i_next;
+            metric_sum_q <= sum_q_next;
+            metric_phase <= sample_phase;
+            metric_src_valid <= 1'b1;
 
             if (metric_valid_d) begin
                 if (phase_d == 6'd0) begin
@@ -522,10 +819,16 @@ always @(posedge clk) begin
 
                 if (phase_d == (SPS - 1)) begin
                     if (metric_d > epoch_best_metric) begin
-                        best_phase <= phase_d;
+                        epoch_winner_phase = phase_d;
                     end else begin
-                        best_phase <= epoch_best_phase;
+                        epoch_winner_phase = epoch_best_phase;
                     end
+
+                    if (!timing_ready) begin
+                        best_phase <= epoch_winner_phase;
+                        timing_track_acc <= 5'sd0;
+                    end
+
                     if (timing_epoch_cnt != 8'hff) begin
                         timing_epoch_cnt <= timing_epoch_cnt + 8'd1;
                     end
@@ -536,8 +839,43 @@ always @(posedge clk) begin
             end
 
             metric_d <= timing_metric;
-            phase_d <= sample_phase;
-            metric_valid_d <= 1'b1;
+            phase_d <= metric_phase;
+            metric_valid_d <= metric_src_valid;
+
+            if (timing_ready && (track_locked || blind_locked) && metric_valid_d) begin
+                if (phase_d == phase_prev(best_phase)) begin
+                    timing_early_metric <= metric_d;
+                    timing_early_valid <= 1'b1;
+                end else if (phase_d == phase_next(best_phase)) begin
+                    if (timing_early_valid) begin
+                        if (timing_early_metric > (metric_d + TIMING_TRACK_DEADBAND)) begin
+                            timing_acc_next = timing_track_acc - 5'sd1;
+                            if (timing_acc_next <= -TIMING_TRACK_LIMIT) begin
+                                best_phase <= phase_prev(best_phase);
+                                timing_track_acc <= 5'sd0;
+                            end else begin
+                                timing_track_acc <= timing_acc_next;
+                            end
+                        end else if (metric_d > (timing_early_metric + TIMING_TRACK_DEADBAND)) begin
+                            timing_acc_next = timing_track_acc + 5'sd1;
+                            if (timing_acc_next >= TIMING_TRACK_LIMIT) begin
+                                best_phase <= phase_next(best_phase);
+                                timing_track_acc <= 5'sd0;
+                            end else begin
+                                timing_track_acc <= timing_acc_next;
+                            end
+                        end else if (timing_track_acc > 5'sd0) begin
+                            timing_track_acc <= timing_track_acc - 5'sd1;
+                        end else if (timing_track_acc < 5'sd0) begin
+                            timing_track_acc <= timing_track_acc + 5'sd1;
+                        end
+                    end
+                    timing_early_valid <= 1'b0;
+                end
+            end else begin
+                timing_early_valid <= 1'b0;
+                timing_track_acc <= 5'sd0;
+            end
 
             if (!corr_update_pending) begin
             case (tracker_state)
@@ -561,7 +899,9 @@ always @(posedge clk) begin
                 end
 
                 TRACK_LOAD: begin
-                    best_offset <= scan_best_offset;
+                    if (!track_locked && !blind_train_active && !blind_locked) begin
+                        best_offset <= scan_best_offset;
+                    end
                     phase_scan_re <= corr_to_phase_est(corr_i[scan_best_offset]);
                     phase_scan_im <= corr_to_phase_est(corr_q[scan_best_offset]);
                     phase_best_dot <= {1'b1, {(PHASE_DOT_W-1){1'b0}}};
@@ -591,7 +931,8 @@ always @(posedge clk) begin
             endcase
             end
 
-            if ((tracker_state == TRACK_IDLE) && phase_dot_valid) begin
+            if ((tracker_state == TRACK_IDLE) && phase_dot_valid &&
+                !track_locked && !blind_train_active && !blind_locked) begin
                 if (phase_dot_d > phase_best_dot) begin
                     phase_bin <= phase_dot_bin_d;
                 end else begin
@@ -620,11 +961,12 @@ always @(posedge clk) begin
             end
         end else begin
             metric_valid_d <= 1'b0;
+            metric_src_valid <= 1'b0;
         end
 
         dbg_best_phase <= best_phase;
         dbg_phase_bin  <= phase_bin;
-        dbg_lock_score <= lock_score;
+        dbg_lock_score <= (blind_lock_score > lock_score) ? blind_lock_score : lock_score;
     end
 end
 

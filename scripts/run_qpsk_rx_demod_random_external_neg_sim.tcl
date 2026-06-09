@@ -1,12 +1,13 @@
 #!/usr/bin/env tclsh
-# Run behavioral simulation for tb_qpsk_rx_demod_loopback in batch mode.
+# Run behavioral simulation for tb_qpsk_rx_demod_random_external with a
+# negative residual carrier offset in batch mode.
 # Usage:
-#   vivado -mode batch -source scripts/run_qpsk_rx_demod_loopback_sim.tcl
+#   vivado -mode batch -source scripts/run_qpsk_rx_demod_random_external_neg_sim.tcl
 
 set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir ".."]]
 set xpr_path   [file join $repo_root "Ez_QPSK.xpr"]
-set sim_top    "tb_qpsk_rx_demod_loopback"
+set sim_top    "tb_qpsk_rx_demod_random_external"
 set sim_log    [file join $repo_root "Ez_QPSK.sim" "sim_1" "behav" "xsim" "simulate.log"]
 
 proc add_file_if_missing {fileset_name file_path} {
@@ -37,9 +38,9 @@ if {[llength [get_filesets sim_1]] == 0} {
 }
 
 add_file_if_missing sources_1 [file join $repo_root "RTL" "modem" "qpsk_rx_fixed_demod.v"]
-add_file_if_missing sim_1     [file join $repo_root "Sim" "tb_qpsk_rx_demod_loopback.v"]
+add_file_if_missing sim_1     [file join $repo_root "Sim" "tb_qpsk_rx_demod_random_external.v"]
 
-set_property verilog_define {} [get_filesets sim_1]
+set_property verilog_define {QPSK_RX_RANDOM_NEG=1} [get_filesets sim_1]
 set_property top $sim_top [get_filesets sim_1]
 update_compile_order -fileset sources_1
 update_compile_order -fileset sim_1
@@ -49,6 +50,7 @@ launch_simulation -simset sim_1 -mode behavioral
 run all
 
 close_sim
+set_property verilog_define {} [get_filesets sim_1]
 close_project
 
 if {![file exists $sim_log]} {
@@ -60,14 +62,14 @@ set fh [open $sim_log r]
 set sim_text [read $fh]
 close $fh
 
-if {[string first {[TB_QPSK_RX_DEMOD][FAIL]} $sim_text] >= 0} {
-    puts "ERROR: simulation reported \[TB_QPSK_RX_DEMOD\]\[FAIL\]. See $sim_log"
+if {[string first {[TB_QPSK_RX_RANDOM][FAIL]} $sim_text] >= 0} {
+    puts "ERROR: simulation reported \[TB_QPSK_RX_RANDOM\]\[FAIL\]. See $sim_log"
     exit 1
 }
 
-if {[string first {[TB_QPSK_RX_DEMOD][PASS]} $sim_text] < 0} {
-    puts "ERROR: simulation did not report \[TB_QPSK_RX_DEMOD\]\[PASS\]. See $sim_log"
+if {[string first {[TB_QPSK_RX_RANDOM][PASS]} $sim_text] < 0} {
+    puts "ERROR: simulation did not report \[TB_QPSK_RX_RANDOM\]\[PASS\]. See $sim_log"
     exit 1
 }
 
-puts "INFO: RX demod loopback simulation completed."
+puts "INFO: RX demod random-external negative-offset simulation completed."

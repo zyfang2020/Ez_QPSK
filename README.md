@@ -18,15 +18,24 @@
 3. 阶段 3：协议化数据输入  
    目标：确定链路协议，从上位机获取数据包并驱动调制发送。
 
-### 1.3 当前进度（当前处于阶段 2 本地 loopback 验证）
+### 1.3 当前进度（阶段 2 在线解调与外部输入仿真验证）
 
 - 已完成：QPSK 调制链 RTL 实现与仿真验证（单板本地回环）。
 - 已完成：`qpsk_test_gen -> qpsk_tx_single_dac -> ad9762_driver` 单 DAC 发射链仿真验证。
 - 已完成：ADC 侧采集与 AXI 搬运通路 RTL 实现（`ad9215_capture -> stream_async_fifo -> stream_pkt_gen -> axis_to_dma_pkt`）。
 - 已完成：顶层“无板数字回环”仿真验证，确认 `DAC -> 本地回环 ADC -> RX AXIS` 数据链与 `tlast` 行为正确。
 - 已完成：新增 PL 侧 `qpsk_rx_fixed_demod` 在线解调分支，并通过本地 TX loopback 仿真恢复 Gray 序列。
+- 已完成：为 RX demod 增加 decision-directed 相位微调、锁定迟滞和轻量 early/late 定时跟踪，并通过带相位偏移、`3 kHz` 残余频偏、符号定时相位偏移和 ADC DC 的进阶仿真。
+- 已完成：新增外部输入漂移仿真，使用独立 `2.010 Msym/s` QPSK 源和 TX 参考校验，验证 RX 能跟随外部符号钟偏差。
+- 已完成：新增随机外部 QPSK 仿真，验证 RX 在没有本地 Gray 循环先验、带 `+15 kHz/-15 kHz` 残余载波偏差、慢幅度/DC 漂移和 ADC 采样噪声时可通过锁前频偏扫描与盲质量锁定恢复符号，并确认锁后 NCO 频偏微调参与工作。
+- 已完成：导出 `rx_demod_bit/rx_demod_lock` 到 J11 debug 管脚，便于真实外部输入上板时直接观测判决位与锁定状态。
+- 已完成：新增外部 RX 上板模式脚本，可在不重画 BD 的情况下把固定配置切到 `FIXED_TX_EN=0/FIXED_RX_EN=1`，用于外部 QPSK 信号灌 ADC 时关闭本地 DAC 发射。
+- 已完成：新增顶层 external RX 仿真，验证 `pl_comm_top_fixed_cfg` 在 TX 关闭时 DAC 保持回零，外部 PRBS QPSK ADC 激励可经顶层 RX demod 盲锁恢复，并且 J11 debug 输出与内部 lock/bit 一致。
+- 已完成：新增并验证 external RX bitstream batch 构建，产物输出到 `artifacts/external_rx/`；本次 route/write_bitstream 通过，setup slack `0.052 ns`、hold slack `0.046 ns`，`.ltx` 已包含 ILA `probe2` 的 `rx_demod_dbg_bus[95:0]`。
+- 已完成：新增 external RX ILA 抓取脚本，可连接 Hardware Manager、可选烧录 external RX bitstream，并把 ILA 数据导出为 CSV。
+- 已完成：新增 external RX ILA CSV 解码工具，可从 Hardware Manager 导出的 `probe2` 数据中解出 lock ratio、lock score、I/Q、timing phase、NCO 频偏校正和符号统计。
 - 当前工程定位：保留原 BD/PS/DMA 主结构，在 ADC capture 后并联在线解调 debug 支路。
-- 未完成：外部 QPSK 发射机输入下的完整载波/相位/定时恢复，上板联调，协议化上位机数据接入。
+- 未完成：真实外部 QPSK 发射机上板联调，更完整的盲锁定/误码统计，协议化上位机数据接入。
 
 ### 1.4 阶段 1 验收口径
 
@@ -54,9 +63,10 @@
   - `Constraints/sys_clk_ax7020.xdc`
   - `Constraints/pl_comm_top_io_ax7020_adc.xdc`
   - `Constraints/pl_comm_top_io_ax7020_dac.xdc`
+  - `Constraints/pl_comm_top_io_ax7020_j11_debug.xdc`
 - 当前 BD 中，主链路时钟由 PS `FCLK_CLK0` 提供，并同时连接到 `clk_axi` 和 `clk_io`。
 - `pl_comm_top` 内部把 `clk_io` 直接转发为板外 `clk_adc` / `clk_dac`。
-- `clk_50M` 是 AX7020 板载 PL 时钟输入；当前 BD 中保留为外部端口，主要用于调试逻辑时钟，不作为主 QPSK 采样链路的时钟源。
+- `clk_50M` 是 AX7020 板载 PL 时钟输入；当前 BD 中保留为外部端口，不作为主 QPSK 采样链路的时钟源。external RX bitstream 中，BD ILA 已切到 PS `FCLK_CLK0`，与 `clk_io`/RX demod 同域采样。
 - PS/BD 相关时钟连接由 Vivado 工程重建脚本中的 BD 定义恢复。
 
 ### 2.3 顶层与模式说明
@@ -69,6 +79,8 @@
   - ADC capture 后并联 `qpsk_rx_fixed_demod`，输出 `rx_demod_sym/valid/lock` 供仿真和后续 ILA/J11 调试使用。
 - 固定配置封装：`RTL/top/pl_comm_top_fixed_cfg.v`
   - 当前用于最小 bring-up：固定走 QPSK 内部测试发送路径。
+  - 导出 `rx_demod_bit` 和 `rx_demod_lock` 两个板级 debug 输出；当前约束到 J11 PIN3/F17 与 J11 PIN4/F16。
+  - 导出 `rx_demod_dbg_bus[95:0]` 给 BD 内现有 ILA 的 `probe2`，用于 external RX 上板时观察锁定质量、I/Q、定时相位和 NCO 频偏校正。
 
 ### 2.4 目录与文件作用（按工程根目录）
 
@@ -94,11 +106,19 @@
 - `Sim/tb_qpsk_tx_chain_min.v`：legacy QPSK 发射链。
 - `Sim/tb_qpsk_tx_single_dac_min.v`：推荐 QPSK 单 DAC 发射链（可导出 CSV）。
 - `Sim/tb_qpsk_rx_demod_loopback.v`：stage-2 本地 TX loopback 在线解调验证。
+- `Sim/tb_qpsk_rx_demod_impairments.v`：stage-2+ 进阶恢复验证，直接生成带 `3 kHz` 残余频偏等扰动的 QPSK ADC 输入。
+- `Sim/tb_qpsk_rx_demod_external_drift.v`：stage-2+ 外部输入漂移验证，直接生成独立 `2.010 Msym/s` QPSK ADC 输入并按 TX 参考校验 RX 输出。
+- `Sim/tb_qpsk_rx_demod_random_external.v`：stage-2+ 随机外部输入验证，使用带 `+15 kHz/-15 kHz` 残余载波偏差、慢幅度/DC 漂移和 ADC 采样噪声的 PRBS QPSK 符号，并按 TX 参考校验盲锁后的 RX 输出。
+- `Sim/tb_pl_comm_top_external_rx.v`：stage-2+ 顶层外部 RX 验证，实例化 `pl_comm_top_fixed_cfg` 的 `FIXED_TX_EN=0/FIXED_RX_EN=1` 模式，检查 TX 关闭回零、J11 debug 输出和外部 ADC 输入解调。
 - 离线脚本：`Tool/matlab/qpsk_single_dac_demod_demo.m`（读取 CSV 做离线解调示例）。
 
 ### 2.6 当前注意事项
 
 - 当前在线解调已覆盖本地固定 Gray loopback 仿真，不等同于外部发射机全场景锁定。
+- 当前 decision-directed 相位微调、锁前频偏扫描、锁后 NCO 频偏微调和 early/late 定时跟踪已覆盖固定频点残余频偏与仿真外部符号率漂移，仍不等同于真实射频环境的完整盲同步链。
+- 当前 RX demod 优先使用本地 Gray 相关锁定；若长期不能匹配该测试模式，会进入盲锁分支，用星座置信度和 decision-directed 相位误差形成外部随机数据的 lock。ILA 中的 `rx_demod_dbg_lock_score` 显示 Gray/盲锁两路质量分数中的较高值。
+- external RX bitstream 的 `.ltx` 中，BD ILA `probe2` 连接 `rx_demod_dbg_bus[95:0]`。位域：`[95:80]` signed `nco_freq_corr`，`[79:64]` I，`[63:48]` Q，`[47:40]` lock score，`[39:34]` best timing phase，`[33:30]` phase bin，`[29]` lock，`[28]` valid，`[27:26]` symbol，`[25:16]` raw ADC pins，`[15:0]` captured ADC stream sample。
+- external RX bitstream 中，BD ILA 使用 PS `FCLK_CLK0` 采样，与 RX demod 同域；J11 管脚仍建议同时观察实时 bit/lock。
 - 当前“ADC->AXI->DDR”链路仍保留，在线解调支路不替代原始采样搬运。
 - `qpsk_sym_*` 为后续协议化输入预留接口，当前主要使用内部 `qpsk_test_gen`。
 - RX 侧 AXIS 口通常在 Vivado BD 内连接 DMA，不作为外部引脚导出。
@@ -121,6 +141,36 @@
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_tx_single_dac_sim.tcl`
 - 运行 stage-2 RX demod 本地 loopback 仿真：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_loopback_sim.tcl`
+- 运行 stage-2+ RX demod 带扰动仿真：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_impairments_sim.tcl`
+- 运行 stage-2+ RX demod 外部漂移仿真：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_external_drift_sim.tcl`
+- 运行 stage-2+ RX demod 随机外部输入仿真：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_random_external_sim.tcl`
+- 运行 stage-2+ RX demod 随机外部输入负频偏仿真：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_random_external_neg_sim.tcl`
+- 运行 stage-2+ 顶层外部 RX 模式仿真：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_pl_comm_top_external_rx_sim.tcl`
+- 刷新当前 BD 并导出 J11 RX demod debug 引脚：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/export_rx_demod_j11_debug.tcl`
+- 切到外部 RX 上板验证模式（关闭本地 TX，保留 RX demod 与 DMA 采样）：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/set_qpsk_rx_board_mode.tcl -tclargs external_rx`
+- 恢复本地 TX/RX loopback bring-up 模式：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/set_qpsk_rx_board_mode.tcl -tclargs loopback`
+- 生成 external RX 上板 bitstream（自动切 `FIXED_TX_EN=0/FIXED_RX_EN=1` 并复制 `.bit/.ltx` 到 `artifacts/external_rx/`）：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_external_rx_bitstream.tcl`
+- 烧录 external RX 上板 bitstream 并绑定 ILA probes：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_external_rx_bitstream.tcl`
+- 列出 Hardware Manager 可见的 JTAG target/device/ILA（上板前预检）：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/capture_external_rx_ila.tcl -tclargs -list`
+- 抓取 external RX ILA CSV（可加 `-program` 先烧录）：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/capture_external_rx_ila.tcl -tclargs -program -out Tool\data\external_rx_ila.csv`
+  - 若刚烧录后需要等待锁定或想提高命中率，可用 `-warmup-ms 500 -repeat 3` 连抓多份，输出文件会加 `_00/_01/_02` 后缀。
+- 解码 Vivado Hardware Manager 导出的 external RX ILA CSV：
+  - `python Tool/python/decode_rx_demod_ila.py path\to\ila_export.csv --decoded-csv Tool\data\rx_demod_ila_decoded.csv --summary-json Tool\data\rx_demod_ila_summary.json`
+  - 解码摘要会把 `nco_freq_corr` 按默认 `100 MHz / 24-bit` NCO 换算为 Hz，并给出 ADC 动态范围与简单诊断提示。
+  - 第一轮外部输入验收可加 `--check-external-rx`，默认要求 `lock_ratio >= 0.50`、`valid_ratio >= 0.005`、`adc_raw_span >= 16`，不满足时命令返回非零。
+  - 若外部 QPSK 源可配置为本项目 Gray 循环 `00 -> 01 -> 11 -> 10`，再加 `--check-gray-cycle`，工具会允许循环起点和方向不确定，并检查有效符号序列是否持续匹配。
 
 ### 2.8 Vivado 工程重建脚本
 
@@ -204,7 +254,10 @@
 
 ### 3.6 当前阶段下一步（对齐阶段 2）
 
-1. 把 `rx_demod_sym/valid/lock` 接入 ILA 或临时 J11 debug 引脚，做上板可观测验证。
-2. 针对外部 QPSK 输入补 Costas/decision-directed 相位跟踪与 Gardner/early-late 定时恢复。
-3. 保留 ADC 原始样本 DMA 搬运，用离线脚本交叉验证在线判决。
-4. 后续再进入协议化上位机数据输入与误码统计闭环。
+1. 运行 `scripts/run_external_rx_bitstream.tcl` 生成 external RX 上板镜像，用 J11 `rx_demod_bit/rx_demod_lock` 对真实外部 QPSK 输入做可观测验证。
+2. 运行 `scripts/capture_external_rx_ila.tcl -tclargs -list` 确认 Vivado 能看到 JTAG target、`xc7z020` device 和 ILA core。
+3. 运行 `scripts/capture_external_rx_ila.tcl` 抓取 ILA CSV，再用 `Tool/python/decode_rx_demod_ila.py --check-external-rx` 解码 `rx_demod_dbg_bus`，检查 lock ratio、lock score、I/Q 幅度、timing phase、ADC span 和 `nco_freq_corr` Hz 换算值；若外部源发 Gray 循环，则追加 `--check-gray-cycle` 做更接近验收的符号序列检查。
+4. 外部信号建议先从约 `7 MHz` 载波、`2 Msym/s`、中等 ADC 幅度开始；若 `rx_demod_lock` 不稳定，优先同时抓取 ADC 原始样本做离线频谱/星座交叉验证。
+5. 针对真实外部 QPSK 输入继续强化盲锁定范围、误码统计和 ILA/离线交叉验证。
+6. 保留 ADC 原始样本 DMA 搬运，用离线脚本交叉验证在线判决。
+7. 后续再进入协议化上位机数据输入与误码统计闭环。

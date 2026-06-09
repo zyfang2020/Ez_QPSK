@@ -50,6 +50,7 @@ module pl_comm_top #(
     output wire [1:0]                rx_demod_sym,
     output wire                      rx_demod_valid,
     output wire                      rx_demod_lock,
+    output wire [95:0]               rx_demod_dbg_bus,
     // 输出到 AXI DMA S2MM 的 AXIS 口
     output wire [RX_DW-1:0]          m_axis_rx_tdata,
     output wire [((RX_DW+7)/8)-1:0]  m_axis_rx_tkeep,
@@ -94,6 +95,7 @@ wire cap_valid_gated;
 (* keep = "true", mark_debug = "true" *) wire [5:0] rx_demod_dbg_best_phase;
 (* keep = "true", mark_debug = "true" *) wire [3:0] rx_demod_dbg_phase_bin;
 (* keep = "true", mark_debug = "true" *) wire [7:0] rx_demod_dbg_lock_score;
+(* keep = "true", mark_debug = "true" *) wire signed [15:0] rx_demod_dbg_nco_freq_corr;
 
 wire [RX_DW-1:0] fifo_data;
 wire fifo_valid;
@@ -109,6 +111,20 @@ localparam [23:0] QPSK_PHASE_INC_DEFAULT = 24'h11EB85;
 // ADC / DAC 板级时钟直接由独立的采样侧时钟输入驱动。
 assign clk_adc = clk_io;
 assign clk_dac = clk_io;
+
+assign rx_demod_dbg_bus = {
+    rx_demod_dbg_nco_freq_corr, // [95:80] signed NCO trim in phase-inc LSBs
+    rx_demod_dbg_i,             // [79:64] rotated I at symbol decisions
+    rx_demod_dbg_q,             // [63:48] rotated Q at symbol decisions
+    rx_demod_dbg_lock_score,    // [47:40] max Gray/blind lock quality
+    rx_demod_dbg_best_phase,    // [39:34] selected timing phase in 0..49
+    rx_demod_dbg_phase_bin,     // [33:30] residual phase bin
+    rx_demod_lock,              // [29]
+    rx_demod_valid,             // [28]
+    rx_demod_sym,               // [27:26]
+    adc_data,                   // [25:16] raw ADC pins
+    cap_data                    // [15:0] captured ADC stream sample
+};
 
 // 各时钟域复位同步
 reset_sync u_reset_sync_adc (
@@ -252,7 +268,8 @@ assign cap_valid_gated = cap_valid & rx_en;
     .dbg_q(rx_demod_dbg_q),
     .dbg_best_phase(rx_demod_dbg_best_phase),
     .dbg_phase_bin(rx_demod_dbg_phase_bin),
-    .dbg_lock_score(rx_demod_dbg_lock_score)
+    .dbg_lock_score(rx_demod_dbg_lock_score),
+    .dbg_nco_freq_corr(rx_demod_dbg_nco_freq_corr)
 );
 
 // RX: ADC -> AXI 跨时钟域

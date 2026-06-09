@@ -42,10 +42,15 @@
 #    "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_mod_core.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_adc.xdc"
 #    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_dac.xdc"
+#    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_j11_debug.xdc"
 #    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/sys_clk_ax7020.xdc"
 #    "D:/Project/ProjectVivado/Ez_QPSK/Sim/tb_pl_comm_top_fixed_cfg_loopback.v"
+#    "D:/Project/ProjectVivado/Ez_QPSK/Sim/tb_pl_comm_top_external_rx.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_tx_single_dac_min.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_loopback.v"
+#    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_impairments.v"
+#    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_external_drift.v"
+#    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_random_external.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_tx_chain_min.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_tx_chain_min.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_rx_chain_min.v"
@@ -79,10 +84,15 @@ proc checkRequiredFiles { origin_dir} {
    "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_mod_core.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_adc.xdc" \
    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_dac.xdc" \
+   "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_j11_debug.xdc" \
    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/sys_clk_ax7020.xdc" \
    "D:/Project/ProjectVivado/Ez_QPSK/Sim/tb_pl_comm_top_fixed_cfg_loopback.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/Sim/tb_pl_comm_top_external_rx.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_tx_single_dac_min.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_loopback.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_impairments.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_external_drift.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_random_external.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_tx_chain_min.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_tx_chain_min.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_rx_chain_min.v" \
@@ -550,6 +560,23 @@ set_property -name "used_in_implementation" -value "1" -objects $file_obj
 set_property -name "used_in_synthesis" -value "1" -objects $file_obj
 
 # Add/Import constrs file and set constrs file properties
+set file "[file normalize "$origin_dir/../Constraints/pl_comm_top_io_ax7020_j11_debug.xdc"]"
+set file_imported [import_files -fileset constrs_1 [list $file]]
+set file "Constraints/pl_comm_top_io_ax7020_j11_debug.xdc"
+set file_obj [get_files -of_objects [get_filesets constrs_1] [list "*$file"]]
+set_property -name "file_type" -value "XDC" -objects $file_obj
+set_property -name "is_enabled" -value "1" -objects $file_obj
+set_property -name "is_global_include" -value "0" -objects $file_obj
+set_property -name "library" -value "xil_defaultlib" -objects $file_obj
+set_property -name "path_mode" -value "RelativeFirst" -objects $file_obj
+set_property -name "processing_order" -value "NORMAL" -objects $file_obj
+set_property -name "scoped_to_cells" -value "" -objects $file_obj
+set_property -name "scoped_to_ref" -value "" -objects $file_obj
+set_property -name "used_in" -value "synthesis implementation" -objects $file_obj
+set_property -name "used_in_implementation" -value "1" -objects $file_obj
+set_property -name "used_in_synthesis" -value "1" -objects $file_obj
+
+# Add/Import constrs file and set constrs file properties
 set file "[file normalize "$origin_dir/../Constraints/sys_clk_ax7020.xdc"]"
 set file_imported [import_files -fileset constrs_1 [list $file]]
 set file "Constraints/sys_clk_ax7020.xdc"
@@ -583,8 +610,12 @@ set obj [get_filesets sim_1]
 # Import local files from the original project
 set files [list \
  [file normalize "${origin_dir}/../Sim/tb_pl_comm_top_fixed_cfg_loopback.v" ]\
+ [file normalize "${origin_dir}/../Sim/tb_pl_comm_top_external_rx.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_qpsk_tx_single_dac_min.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_qpsk_rx_demod_loopback.v" ]\
+ [file normalize "${origin_dir}/../Sim/tb_qpsk_rx_demod_impairments.v" ]\
+ [file normalize "${origin_dir}/../Sim/tb_qpsk_rx_demod_external_drift.v" ]\
+ [file normalize "${origin_dir}/../Sim/tb_qpsk_rx_demod_random_external.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_qpsk_tx_chain_min.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_tx_chain_min.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_rx_chain_min.v" ]\
@@ -596,6 +627,18 @@ set imported_files [import_files -fileset sim_1 $files]
 
 # Set 'sim_1' fileset file properties for local files
 set file "Sim/tb_pl_comm_top_fixed_cfg_loopback.v"
+set file_obj [get_files -of_objects [get_filesets sim_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+set_property -name "is_enabled" -value "1" -objects $file_obj
+set_property -name "is_global_include" -value "0" -objects $file_obj
+set_property -name "library" -value "xil_defaultlib" -objects $file_obj
+set_property -name "path_mode" -value "RelativeFirst" -objects $file_obj
+set_property -name "used_in" -value "synthesis implementation simulation" -objects $file_obj
+set_property -name "used_in_implementation" -value "1" -objects $file_obj
+set_property -name "used_in_simulation" -value "1" -objects $file_obj
+set_property -name "used_in_synthesis" -value "1" -objects $file_obj
+
+set file "Sim/tb_pl_comm_top_external_rx.v"
 set file_obj [get_files -of_objects [get_filesets sim_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 set_property -name "is_enabled" -value "1" -objects $file_obj
@@ -620,6 +663,42 @@ set_property -name "used_in_simulation" -value "1" -objects $file_obj
 set_property -name "used_in_synthesis" -value "1" -objects $file_obj
 
 set file "Sim/tb_qpsk_rx_demod_loopback.v"
+set file_obj [get_files -of_objects [get_filesets sim_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+set_property -name "is_enabled" -value "1" -objects $file_obj
+set_property -name "is_global_include" -value "0" -objects $file_obj
+set_property -name "library" -value "xil_defaultlib" -objects $file_obj
+set_property -name "path_mode" -value "RelativeFirst" -objects $file_obj
+set_property -name "used_in" -value "synthesis implementation simulation" -objects $file_obj
+set_property -name "used_in_implementation" -value "1" -objects $file_obj
+set_property -name "used_in_simulation" -value "1" -objects $file_obj
+set_property -name "used_in_synthesis" -value "1" -objects $file_obj
+
+set file "Sim/tb_qpsk_rx_demod_impairments.v"
+set file_obj [get_files -of_objects [get_filesets sim_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+set_property -name "is_enabled" -value "1" -objects $file_obj
+set_property -name "is_global_include" -value "0" -objects $file_obj
+set_property -name "library" -value "xil_defaultlib" -objects $file_obj
+set_property -name "path_mode" -value "RelativeFirst" -objects $file_obj
+set_property -name "used_in" -value "synthesis implementation simulation" -objects $file_obj
+set_property -name "used_in_implementation" -value "1" -objects $file_obj
+set_property -name "used_in_simulation" -value "1" -objects $file_obj
+set_property -name "used_in_synthesis" -value "1" -objects $file_obj
+
+set file "Sim/tb_qpsk_rx_demod_external_drift.v"
+set file_obj [get_files -of_objects [get_filesets sim_1] [list "*$file"]]
+set_property -name "file_type" -value "Verilog" -objects $file_obj
+set_property -name "is_enabled" -value "1" -objects $file_obj
+set_property -name "is_global_include" -value "0" -objects $file_obj
+set_property -name "library" -value "xil_defaultlib" -objects $file_obj
+set_property -name "path_mode" -value "RelativeFirst" -objects $file_obj
+set_property -name "used_in" -value "synthesis implementation simulation" -objects $file_obj
+set_property -name "used_in_implementation" -value "1" -objects $file_obj
+set_property -name "used_in_simulation" -value "1" -objects $file_obj
+set_property -name "used_in_synthesis" -value "1" -objects $file_obj
+
+set file "Sim/tb_qpsk_rx_demod_random_external.v"
 set file_obj [get_files -of_objects [get_filesets sim_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 set_property -name "is_enabled" -value "1" -objects $file_obj
@@ -898,6 +977,8 @@ proc cr_bd_zynq_dma { parentCell } {
   set clk_adc [ create_bd_port -dir O clk_adc ]
   set clk_dac [ create_bd_port -dir O clk_dac ]
   set dac_data [ create_bd_port -dir O -from 11 -to 0 dac_data ]
+  set rx_demod_bit [ create_bd_port -dir O rx_demod_bit ]
+  set rx_demod_lock [ create_bd_port -dir O rx_demod_lock ]
 
   # Create instance: axi_dma_0, and set properties
   set axi_dma_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_dma:7.1 axi_dma_0 ]
@@ -922,9 +1003,10 @@ proc cr_bd_zynq_dma { parentCell } {
   set_property -dict [ list \
    CONFIG.C_ENABLE_ILA_AXI_MON {false} \
    CONFIG.C_MONITOR_TYPE {Native} \
-   CONFIG.C_NUM_OF_PROBES {2} \
+   CONFIG.C_NUM_OF_PROBES {3} \
    CONFIG.C_PROBE0_WIDTH {10} \
    CONFIG.C_PROBE1_WIDTH {12} \
+   CONFIG.C_PROBE2_WIDTH {96} \
  ] $ila_0
 
   # Create instance: pl_comm_top_fixed_cfg_0, and set properties
@@ -1776,11 +1858,13 @@ proc cr_bd_zynq_dma { parentCell } {
   # Create port connections
   connect_bd_net -net adc_data_0_1 [get_bd_ports adc_data] [get_bd_pins ila_0/probe0] [get_bd_pins pl_comm_top_fixed_cfg_0/adc_data]
   connect_bd_net -net axi_dma_0_s2mm_introut [get_bd_pins axi_dma_0/s2mm_introut] [get_bd_pins processing_system7_0/IRQ_F2P]
-  connect_bd_net -net clk_50M_1 [get_bd_ports clk_50M] [get_bd_pins ila_0/clk]
   connect_bd_net -net pl_comm_top_fixed_cfg_0_clk_adc [get_bd_ports clk_adc] [get_bd_pins pl_comm_top_fixed_cfg_0/clk_adc]
   connect_bd_net -net pl_comm_top_fixed_cfg_0_clk_dac [get_bd_ports clk_dac] [get_bd_pins pl_comm_top_fixed_cfg_0/clk_dac]
   connect_bd_net -net pl_comm_top_fixed_cfg_0_dac_data [get_bd_ports dac_data] [get_bd_pins ila_0/probe1] [get_bd_pins pl_comm_top_fixed_cfg_0/dac_data]
-  connect_bd_net -net processing_system7_0_FCLK_CLK0 [get_bd_pins axi_dma_0/m_axi_s2mm_aclk] [get_bd_pins axi_dma_0/s_axi_lite_aclk] [get_bd_pins axi_mem_intercon/ACLK] [get_bd_pins axi_mem_intercon/M00_ACLK] [get_bd_pins axi_mem_intercon/S00_ACLK] [get_bd_pins pl_comm_top_fixed_cfg_0/clk_axi] [get_bd_pins pl_comm_top_fixed_cfg_0/clk_io] [get_bd_pins processing_system7_0/FCLK_CLK0] [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] [get_bd_pins ps7_0_axi_periph/ACLK] [get_bd_pins ps7_0_axi_periph/M00_ACLK] [get_bd_pins ps7_0_axi_periph/S00_ACLK] [get_bd_pins rst_ps7_0_100M/slowest_sync_clk]
+  connect_bd_net -net pl_comm_top_fixed_cfg_0_rx_demod_dbg_bus [get_bd_pins ila_0/probe2] [get_bd_pins pl_comm_top_fixed_cfg_0/rx_demod_dbg_bus]
+  connect_bd_net -net pl_comm_top_fixed_cfg_0_rx_demod_bit [get_bd_ports rx_demod_bit] [get_bd_pins pl_comm_top_fixed_cfg_0/rx_demod_bit]
+  connect_bd_net -net pl_comm_top_fixed_cfg_0_rx_demod_lock [get_bd_ports rx_demod_lock] [get_bd_pins pl_comm_top_fixed_cfg_0/rx_demod_lock]
+  connect_bd_net -net processing_system7_0_FCLK_CLK0 [get_bd_pins axi_dma_0/m_axi_s2mm_aclk] [get_bd_pins axi_dma_0/s_axi_lite_aclk] [get_bd_pins axi_mem_intercon/ACLK] [get_bd_pins axi_mem_intercon/M00_ACLK] [get_bd_pins axi_mem_intercon/S00_ACLK] [get_bd_pins ila_0/clk] [get_bd_pins pl_comm_top_fixed_cfg_0/clk_axi] [get_bd_pins pl_comm_top_fixed_cfg_0/clk_io] [get_bd_pins processing_system7_0/FCLK_CLK0] [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK] [get_bd_pins ps7_0_axi_periph/ACLK] [get_bd_pins ps7_0_axi_periph/M00_ACLK] [get_bd_pins ps7_0_axi_periph/S00_ACLK] [get_bd_pins rst_ps7_0_100M/slowest_sync_clk]
   connect_bd_net -net processing_system7_0_FCLK_RESET0_N [get_bd_pins processing_system7_0/FCLK_RESET0_N] [get_bd_pins rst_ps7_0_100M/ext_reset_in]
   connect_bd_net -net rst_ps7_0_100M_peripheral_aresetn1 [get_bd_pins axi_dma_0/axi_resetn] [get_bd_pins axi_mem_intercon/ARESETN] [get_bd_pins axi_mem_intercon/M00_ARESETN] [get_bd_pins axi_mem_intercon/S00_ARESETN] [get_bd_pins pl_comm_top_fixed_cfg_0/rst_n] [get_bd_pins ps7_0_axi_periph/ARESETN] [get_bd_pins ps7_0_axi_periph/M00_ARESETN] [get_bd_pins ps7_0_axi_periph/S00_ARESETN] [get_bd_pins rst_ps7_0_100M/peripheral_aresetn]
 
@@ -1802,6 +1886,8 @@ preplace port clk_adc -pg 1 -lvl 7 -x 2090 -y 320 -defaultsOSRD
 preplace port clk_dac -pg 1 -lvl 7 -x 2090 -y 480 -defaultsOSRD
 preplace port clk_50M -pg 1 -lvl 0 -x 0 -y 380 -defaultsOSRD
 preplace portBus dac_data -pg 1 -lvl 7 -x 2090 -y 500 -defaultsOSRD
+preplace port rx_demod_bit -pg 1 -lvl 7 -x 2090 -y 600 -defaultsOSRD
+preplace port rx_demod_lock -pg 1 -lvl 7 -x 2090 -y 620 -defaultsOSRD
 preplace portBus adc_data -pg 1 -lvl 0 -x 0 -y 500 -defaultsOSRD
 preplace inst processing_system7_0 -pg 1 -lvl 5 -x 1610 -y 230 -defaultsOSRD
 preplace inst axi_dma_0 -pg 1 -lvl 3 -x 870 -y 180 -defaultsOSRD

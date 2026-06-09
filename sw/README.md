@@ -23,6 +23,24 @@
 4. 根据导出的 `xparameters.h` 核对 DMA 设备号、DDR 地址范围和 UART 输出
 5. 下载运行，观察串口输出
 
+## 命令行 XSA / BSP / 编译冒烟测试
+
+当前仓库提供一个不依赖 Vitis GUI app 模板的 smoke test：
+
+```powershell
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/export_current_xsa.tcl -tclargs -out artifacts\xsa\Ez_QPSK_current.xsa
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/test_vitis_xsa_build.tcl artifacts\xsa\Ez_QPSK_current.xsa Vitis_WS\codex_xsa_smoke_current
+```
+
+该流程会：
+
+1. 从当前 Vivado 工程导出 XSA。
+2. 在被 Git 忽略的 `Vitis_WS/` 下创建临时 platform/BSP。
+3. 从 XSA 重新生成 standalone BSP 和 FSBL。
+4. 使用生成的 BSP 头文件/`libxil.a` 编译并链接 `sw/baremetal_dma_rx/main.c`。
+
+`sw/baremetal_dma_rx/lscript.ld` 是用于命令行 smoke build 的 Zynq DDR linker script；如果后续 PS DDR map 变化，应从 Vitis 重新生成并同步更新。
+
 ## Vitis 版本管理口径
 
 - 当前建议 Vivado 和 Vitis 使用同一版本：`2020.2`。

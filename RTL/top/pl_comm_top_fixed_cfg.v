@@ -37,7 +37,10 @@ module pl_comm_top_fixed_cfg #(
     (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 m_axis_rx TREADY" *)
     input  wire                      m_axis_rx_tready,
     (* X_INTERFACE_INFO = "xilinx.com:interface:axis:1.0 m_axis_rx TLAST" *)
-    output wire                      m_axis_rx_tlast
+    output wire                      m_axis_rx_tlast,
+    output wire                      rx_demod_bit,
+    output wire                      rx_demod_lock,
+    output wire [95:0]               rx_demod_dbg_bus
 );
 
     localparam [1:0] TX_MODE_SEL_FIXED   = 2'd0;
@@ -47,6 +50,11 @@ module pl_comm_top_fixed_cfg #(
     (* keep = "true", mark_debug = "true" *) wire [1:0] rx_demod_sym_dbg;
     (* keep = "true", mark_debug = "true" *) wire       rx_demod_valid_dbg;
     (* keep = "true", mark_debug = "true" *) wire       rx_demod_lock_dbg;
+    (* keep = "true", mark_debug = "true" *) wire [95:0] rx_demod_dbg_bus_dbg;
+
+    assign rx_demod_bit  = rx_demod_sym_dbg[0];
+    assign rx_demod_lock = rx_demod_lock_dbg;
+    assign rx_demod_dbg_bus = rx_demod_dbg_bus_dbg;
 
     pl_comm_top #(
         .ADC_DW(ADC_DW),
@@ -77,6 +85,7 @@ module pl_comm_top_fixed_cfg #(
         .rx_demod_sym(rx_demod_sym_dbg),
         .rx_demod_valid(rx_demod_valid_dbg),
         .rx_demod_lock(rx_demod_lock_dbg),
+        .rx_demod_dbg_bus(rx_demod_dbg_bus_dbg),
         .m_axis_rx_tdata(m_axis_rx_tdata),
         .m_axis_rx_tkeep(m_axis_rx_tkeep),
         .m_axis_rx_tvalid(m_axis_rx_tvalid),
