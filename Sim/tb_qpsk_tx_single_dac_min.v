@@ -14,7 +14,7 @@ localparam integer TARGET_ACCEPT = 50000;
 localparam [23:0]  PHASE_INC     = 24'h11EB85;
 localparam [1:0]   RRC_BETA_SEL  = 2'd2; // 0:0.20, 1:0.35, 2:0.50
 localparam integer DUMP_EN       = 1;
-localparam [255:0] DUMP_FILE     = "qpsk_single_dac_samples_gray.csv";
+localparam integer DAC_UPDATE_NEGEDGE = 1;
 
 reg                  clk;
 reg                  rst_n;
@@ -38,11 +38,11 @@ integer              dump_wr_cnt;
 reg [DAC_DW-1:0]     prev_accept_data;
 reg [DAC_DW-1:0]     hold_data;
 reg                  hold_valid;
-reg [DAC_DW-1:0]     hs_data_dly;
-reg                  hs_data_dly_valid;
+reg [DAC_DW-1:0]     dac_negedge_data;
+reg                  dac_negedge_valid;
 
 task tb_fail;
-    input [255:0] msg;
+    input [8*80-1:0] msg;
     begin
         if (DUMP_EN && (dump_fd != 0)) begin
             $fclose(dump_fd);
@@ -90,7 +90,8 @@ qpsk_tx_single_dac #(
 
 ad9762_driver #(
     .DW(DAC_DW),
-    .HOLD_LAST(1)
+    .HOLD_LAST(1),
+    .UPDATE_NEGEDGE(DAC_UPDATE_NEGEDGE)
 ) u_ad9762_driver (
     .clk_dac(clk),
     .rst_n(rst_n),
@@ -111,6 +112,17 @@ always @(posedge clk or negedge rst_n) begin
     end
 end
 
+// ad9762_driver 在下降沿把当前 tx_data 推到 DAC 输出；下一上升沿检查。
+always @(negedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+        dac_negedge_data  <= {DAC_DW{1'b0}};
+        dac_negedge_valid <= 1'b0;
+    end else begin
+        dac_negedge_data  <= tx_data;
+        dac_negedge_valid <= tx_valid;
+    end
+end
+
 always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         accept_cnt         <= 0;
@@ -119,14 +131,11 @@ always @(posedge clk or negedge rst_n) begin
         prev_accept_data   <= {DAC_DW{1'b0}};
         hold_data          <= {DAC_DW{1'b0}};
         hold_valid         <= 1'b0;
-        hs_data_dly        <= {DAC_DW{1'b0}};
-        hs_data_dly_valid  <= 1'b0;
     end else begin
-        if (hs_data_dly_valid) begin
-            if (dac_data !== hs_data_dly) begin
-                tb_fail("DAC 输出与上一拍握手数据不一致");
+        if (dac_negedge_valid) begin
+            if (dac_data !== dac_negedge_data) begin
+                tb_fail("ERR_DAC_OUTPUT_MISMATCH");
             end
-            hs_data_dly_valid <= 1'b0;
         end
 
         if (tx_valid && !tx_ready) begin
@@ -134,7 +143,7 @@ always @(posedge clk or negedge rst_n) begin
                 hold_valid <= 1'b1;
                 hold_data  <= tx_data;
             end else if (tx_data !== hold_data) begin
-                tb_fail("回压期间 tx_data 不稳定");
+                tb_fail("ERR_TX_DATA_UNSTABLE_UNDER_BACKPRESSURE");
             end
         end else begin
             hold_valid <= 1'b0;
@@ -142,7 +151,7 @@ always @(posedge clk or negedge rst_n) begin
 
         if (tx_valid && tx_ready) begin
             if ((^tx_data) === 1'bx) begin
-                tb_fail("tx_data 出现 X/Z");
+                tb_fail("ERR_TX_DATA_XZ");
             end
 
             if (DUMP_EN && (dump_fd != 0)) begin
@@ -156,13 +165,10 @@ always @(posedge clk or negedge rst_n) begin
             end
             prev_accept_data <= tx_data;
 
-            hs_data_dly <= tx_data;
-            hs_data_dly_valid <= 1'b1;
-
             accept_cnt <= accept_cnt + 1;
             if ((accept_cnt + 1) >= TARGET_ACCEPT) begin
                 if (change_cnt < (TARGET_ACCEPT/8)) begin
-                    tb_fail("输出变化过少，可能未形成有效调制波形");
+                    tb_fail("ERR_OUTPUT_CHANGE_TOO_LOW");
                 end
                 if (DUMP_EN && (dump_fd != 0)) begin
                     $fclose(dump_fd);
@@ -177,9 +183,9 @@ end
 initial begin
     dump_fd = 0;
     if (DUMP_EN) begin
-        dump_fd = $fopen(DUMP_FILE, "w");
+        dump_fd = $fopen("qpsk_single_dac_samples_gray.csv", "w");
         if (dump_fd == 0) begin
-            tb_fail("DAC 导出文件打开失败");
+            tb_fail("ERR_DUMP_FILE_OPEN");
         end
         $fwrite(dump_fd, "idx,tx_u12\n");
     end
