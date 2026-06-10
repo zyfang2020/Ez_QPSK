@@ -166,6 +166,8 @@ reg signed [12:0] dd_phase_acc;
 reg dd_nco_step_pending;
 reg dd_nco_step_up;
 reg blind_phase_guard_set_pending;
+reg [1:0] blind_prev_sym;
+reg blind_prev_sym_valid;
 
 integer n;
 
@@ -246,6 +248,8 @@ wire decision_track_active;
 wire blind_symbol_confident;
 wire blind_symbol_stable;
 wire blind_symbol_fine;
+wire blind_symbol_transition;
+wire blind_symbol_quality;
 wire blind_acq_candidate_ready;
 
 reg signed [12:0] dd_acc_next;
@@ -326,6 +330,10 @@ assign blind_symbol_stable = blind_symbol_confident &&
                              (blind_phase_guard == 5'd0);
 assign blind_symbol_fine = blind_symbol_stable &&
                            (dd_abs_phase_err <= BLIND_FINE_ERR_LIMIT);
+assign blind_symbol_transition = blind_prev_sym_valid &&
+                                 (dec_sym_done != blind_prev_sym);
+assign blind_symbol_quality = blind_symbol_stable &&
+                              blind_symbol_transition;
 assign blind_acq_candidate_ready = blind_locked || acq_freq_wrapped;
 
 generate
@@ -578,6 +586,8 @@ always @(posedge clk) begin
         dd_nco_step_pending <= 1'b0;
         dd_nco_step_up   <= 1'b0;
         blind_phase_guard_set_pending <= 1'b0;
+        blind_prev_sym    <= 2'b00;
+        blind_prev_sym_valid <= 1'b0;
         m_sym            <= 2'b00;
         m_valid          <= 1'b0;
         m_lock           <= 1'b0;
@@ -666,6 +676,8 @@ always @(posedge clk) begin
         dd_nco_step_pending <= 1'b0;
         dd_nco_step_up   <= 1'b0;
         blind_phase_guard_set_pending <= 1'b0;
+        blind_prev_sym    <= 2'b00;
+        blind_prev_sym_valid <= 1'b0;
         m_sym            <= 2'b00;
         m_valid          <= 1'b0;
         m_lock           <= 1'b0;
@@ -699,6 +711,7 @@ always @(posedge clk) begin
             nco_freq_corr <= acq_best_freq;
             phase_bin <= acq_best_phase_bin;
             dd_phase_acc <= 13'sd0;
+            blind_prev_sym_valid <= 1'b0;
         end else if (dd_nco_step_pending && !rot_dec_valid) begin
             dd_nco_step_pending <= 1'b0;
             if (dd_nco_step_up) begin
@@ -811,8 +824,17 @@ always @(posedge clk) begin
             end
             acq_symbol_score_valid <= blind_train_active && !track_locked &&
                                       !blind_locked && !acq_freq_wrapped &&
-                                      blind_symbol_stable;
+                                      blind_symbol_quality;
             acq_symbol_score_fine <= blind_symbol_fine;
+
+            if (blind_train_active || blind_locked) begin
+                blind_prev_sym <= dec_sym_done;
+                if (blind_phase_guard == 5'd0) begin
+                    blind_prev_sym_valid <= 1'b1;
+                end
+            end else begin
+                blind_prev_sym_valid <= 1'b0;
+            end
 
             if (blind_score_next >= BLIND_LOCK_THRESHOLD) begin
                 blind_locked <= 1'b1;
@@ -895,6 +917,7 @@ always @(posedge clk) begin
                     blind_lock_score <= 8'd0;
                     blind_phase_guard <= BLIND_PHASE_GUARD_SYMS;
                     blind_phase_guard_set_pending <= 1'b0;
+                    blind_prev_sym_valid <= 1'b0;
                     dd_phase_acc <= 13'sd0;
                     dd_nco_step_pending <= 1'b0;
                     if (acq_freq_idx >= ACQ_FREQ_LAST_IDX) begin
@@ -920,6 +943,7 @@ always @(posedge clk) begin
                 acq_apply_best_pending <= 1'b0;
                 blind_phase_guard_set_pending <= 1'b0;
                 blind_phase_guard <= 5'd0;
+                blind_prev_sym_valid <= 1'b0;
             end else if (!blind_train_active) begin
                 acq_freq_idx <= 5'd0;
                 acq_freq_dwell <= 9'd0;
@@ -934,6 +958,7 @@ always @(posedge clk) begin
                 blind_phase_guard_set_pending <= 1'b0;
                 nco_freq_corr <= {FREQ_CORR_W{1'b0}};
                 blind_phase_guard <= 5'd0;
+                blind_prev_sym_valid <= 1'b0;
             end
         end else begin
             m_lock <= track_locked || blind_locked;

@@ -30,8 +30,8 @@
 - 已完成：新增随机外部 QPSK 仿真，验证 RX 在没有本地 Gray 循环先验、带 `+15 kHz/-15 kHz` 残余载波偏差、慢幅度/DC 漂移和 ADC 采样噪声时可通过锁前频偏扫描与盲质量锁定恢复符号，并确认锁后 NCO 频偏微调参与工作。
 - 已完成：导出 `rx_demod_bit/rx_demod_lock` 到 J11 debug 管脚，便于真实外部输入上板时直接观测判决位与锁定状态。
 - 已完成：新增外部 RX 上板模式脚本，可在不重画 BD 的情况下把固定配置切到 `FIXED_TX_EN=0/FIXED_RX_EN=1`，用于外部 QPSK 信号灌 ADC 时关闭本地 DAC 发射。
-- 已完成：新增顶层 external RX 仿真，验证 `pl_comm_top_fixed_cfg` 在 TX 关闭时 DAC 保持回零，外部 PRBS QPSK ADC 激励可经顶层 RX demod 盲锁恢复，并且 J11 debug 输出与内部 lock/bit 一致。
-- 已完成：新增并验证 external RX bitstream batch 构建，产物输出到 `artifacts/external_rx/`；最新 route/write_bitstream 通过，setup slack `0.181 ns`、hold slack `0.044 ns`，`.ltx` 已包含 ILA `probe2` 的 `rx_demod_dbg_bus[95:0]`。
+- 已完成：新增顶层 external RX 正/负频偏仿真，验证 `pl_comm_top_fixed_cfg` 在 TX 关闭时 DAC 保持回零，外部 PRBS QPSK ADC 激励可经顶层 RX demod 盲锁恢复，并且 J11 debug 输出与内部 lock/bit 一致。
+- 已完成：新增并验证 external RX bitstream batch 构建，产物输出到 `artifacts/external_rx/`；最新 route/write_bitstream 通过，setup slack `0.169 ns`、hold slack `0.047 ns`，`.ltx` 已包含 ILA `probe2` 的 `rx_demod_dbg_bus[95:0]`。
 - 已完成：新增 external RX ILA 抓取脚本，可连接 Hardware Manager、可选烧录 external RX bitstream，并把 ILA 数据导出为 CSV。
 - 已完成：新增 external RX ILA CSV 解码工具，可从 Hardware Manager 导出的 `probe2` 数据中解出 lock ratio、lock score、I/Q、timing phase、NCO 频偏校正和符号统计。
 - 已完成：新增本地 `loopback_prbs` 上板模式，可把内部 QPSK TX 从固定 Gray 循环切到 PRBS7 符号流，用于观察非周期符号工况下的 ADC 幅度、I/Q 活动和硬判决分布。
@@ -113,13 +113,13 @@
 - `Sim/tb_qpsk_rx_demod_impairments.v`：stage-2+ 进阶恢复验证，直接生成带 `3 kHz` 残余频偏等扰动的 QPSK ADC 输入。
 - `Sim/tb_qpsk_rx_demod_external_drift.v`：stage-2+ 外部输入漂移验证，直接生成独立 `2.010 Msym/s` QPSK ADC 输入并按 TX 参考校验 RX 输出。
 - `Sim/tb_qpsk_rx_demod_random_external.v`：stage-2+ 随机外部输入验证，使用带 `+15 kHz/-15 kHz` 残余载波偏差、慢幅度/DC 漂移和 ADC 采样噪声的 PRBS QPSK 符号，并按 TX 参考校验盲锁后的 RX 输出。
-- `Sim/tb_pl_comm_top_external_rx.v`：stage-2+ 顶层外部 RX 验证，实例化 `pl_comm_top_fixed_cfg` 的 `FIXED_TX_EN=0/FIXED_RX_EN=1` 模式，检查 TX 关闭回零、J11 debug 输出和外部 ADC 输入解调。
+- `Sim/tb_pl_comm_top_external_rx.v`：stage-2+ 顶层外部 RX 验证，实例化 `pl_comm_top_fixed_cfg` 的 `FIXED_TX_EN=0/FIXED_RX_EN=1` 模式，检查 TX 关闭回零、J11 debug 输出、正/负残余频偏方向和外部 ADC 输入解调。
 - 离线脚本：`Tool/matlab/qpsk_single_dac_demod_demo.m`（读取 CSV 做离线解调示例）。
 
 ### 2.6 当前注意事项
 
 - 当前在线解调已覆盖本地固定 Gray loopback 仿真，不等同于外部发射机全场景锁定。
-- 当前 decision-directed 相位微调、锁前频偏扫描、锁后 NCO 频偏微调和 early/late 定时跟踪已覆盖固定频点残余频偏与仿真外部符号率漂移，仍不等同于真实射频环境的完整盲同步链。
+- 当前 decision-directed 相位微调、锁前频偏扫描、锁后 NCO 频偏微调和 early/late 定时跟踪已覆盖固定频点正/负残余频偏与仿真外部符号率漂移，仍不等同于真实射频环境的完整盲同步链。
 - 当前 RX demod 优先使用本地 Gray 相关锁定；若长期不能匹配该测试模式，会进入盲锁分支，用星座置信度和 decision-directed 相位误差形成外部随机数据的 lock。ILA 中的 `rx_demod_dbg_lock_score` 显示 Gray/盲锁两路质量分数中的较高值。
 - `loopback_prbs` 是随机符号压力测试模式，也已作为本地模拟回环的阶段性硬件验收通过。2026-06-11 最新 ILA 三次抓取 `Tool/data/local_prbs_loopback_latest_ila_00..02.csv` 均通过 `--check-external-rx`：`lock_ratio=1`，`lock_score=255`，有效符号数 `20/21/20`，ADC span `948/909/948`，符号熵约 `1.95..1.97` bits。PRBS 下 Gray-cycle 匹配率低是预期现象，不作为失败依据。
 - `external_rx` 会关闭本地 DAC TX。2026-06-11 最新 external RX ILA 抓取 `Tool/data/external_rx_latest_ila_00..02.csv` 显示 ADC span 只有 `3/2/2` 且 `lock_ratio=0`，这不是当前 RTL 判定失败的主要证据，而是 ADC 端没有足够外部 QPSK 输入幅度的证据。接入真实外部源后，优先确认 ADC span 明显大于几十个 LSB，再看 lock 和符号统计。
@@ -157,6 +157,8 @@
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_random_external_neg_sim.tcl`
 - 运行 stage-2+ 顶层外部 RX 模式仿真：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_pl_comm_top_external_rx_sim.tcl`
+- 运行 stage-2+ 顶层外部 RX 负频偏模式仿真：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_pl_comm_top_external_rx_neg_sim.tcl`
 - 刷新当前 BD 并导出 J11 RX demod debug 引脚：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/export_rx_demod_j11_debug.tcl`
 - 切到外部 RX 上板验证模式（关闭本地 TX，保留 RX demod 与 DMA 采样）：

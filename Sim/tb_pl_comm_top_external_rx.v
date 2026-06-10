@@ -25,8 +25,13 @@ localparam integer MIN_NCO_CORR = 96;
 
 localparam real FS_HZ = 100000000.0;
 localparam real CARRIER_HZ = 7000000.0;
+`ifdef QPSK_TOP_EXT_RX_NEG
+localparam real CARRIER_OFFSET_HZ = -15000.0;
+localparam integer EXPECT_NCO_SIGN = -1;
+`else
 localparam real CARRIER_OFFSET_HZ = 15000.0;
 localparam integer EXPECT_NCO_SIGN = 1;
+`endif
 localparam real TX_SYMBOL_RATE_HZ = 2006000.0;
 localparam real PHASE_OFFSET_DEG = 77.0;
 localparam real ADC_AMPLITUDE = 150.0;
@@ -229,6 +234,10 @@ task calibrate_reference;
         end
 
         if (best_matches < (CAL_SYMS - 1)) begin
+            for (j = 0; j < CAL_SYMS; j = j + 1) begin
+                $display("[TB_TOP_EXT_RX][CAL] j=%0d rx=%b ref_idx=%0d ref_sym=%b",
+                         j, calib_rx[j], calib_ref[j], tx_sym_at(calib_ref[j]));
+            end
             tb_fail("ERR_CALIBRATION_MATCH");
         end
         calibrated <= 1'b1;
@@ -393,6 +402,30 @@ always @(posedge clk_adc or negedge rst_n) begin
         end
     end
 end
+
+`ifdef QPSK_TOP_EXT_RX_TRACE
+always @(posedge clk_adc) begin
+    if (rst_n &&
+        u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.rot_dec_valid &&
+        u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.blind_train_active &&
+        !u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.track_locked &&
+        !u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.blind_locked &&
+        !u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.acq_freq_wrapped &&
+        (u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.acq_freq_dwell == 9'd383)) begin
+        $display("[TB_TOP_EXT_RX][ACQ] t=%0t idx=%0d freq=%0d cand=%0d best=%0d best_freq=%0d phase=%0d stable=%0b fine=%0b dd_err=%0d",
+                 $time,
+                 u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.acq_freq_idx,
+                 u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.nco_freq_corr,
+                 u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.acq_candidate_score,
+                 u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.acq_best_score,
+                 u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.acq_best_freq,
+                 u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.phase_bin,
+                 u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.blind_symbol_stable,
+                 u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.blind_symbol_fine,
+                 u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.dd_phase_err);
+    end
+end
+`endif
 
 initial begin
     rst_n = 1'b0;

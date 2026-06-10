@@ -157,11 +157,11 @@ Hardware result on 2026-06-10:
 - `external_rx` implementation passed timing with setup slack `0.007 ns` and hold slack `0.048 ns`; setup is positive but very tight, so later carrier/timing-loop additions need timing attention.
 - `scripts/export_current_xsa.tcl -tclargs -include-bit -out artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa` exported an XSA carrying the matching external-RX bitstream.
 - `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx` passed: Vitis regenerated the standalone BSP/FSBL and linked `sw/baremetal_dma_rx/main.c` into a smoke ELF.
-- Latest `external_rx` rebuild on 2026-06-11 after timing-pipeline cleanup passed implementation timing with setup slack `0.181 ns` and hold slack `0.044 ns`, and refreshed:
+- Latest `external_rx` rebuild on 2026-06-11 after acquisition transition-gating cleanup passed implementation timing with setup slack `0.169 ns` and hold slack `0.047 ns`, and refreshed:
   - `artifacts/external_rx/Ez_QPSK_external_rx.bit`
   - `artifacts/external_rx/Ez_QPSK_external_rx.ltx`
   - `artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa`
-- `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx_latest` passed for the refreshed XSA.
+- `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx_latest` passed for the refreshed XSA after the transition-gating rebuild.
 - Programming the refreshed `external_rx` image and capturing ILA succeeded, but the current ADC input was only near-midscale noise:
   - `Tool/data/external_rx_latest_ila_00..02.csv`
   - `adc_raw_span=3/2/2`
@@ -182,7 +182,7 @@ Hardware result on 2026-06-10:
 
 Remaining note: the RTL modules still emit XSim timescale warnings because several source files do not declare a timescale. This is noisy but did not block the repaired simulation.
 
-Stage-2 RX demod status on 2026-06-10:
+Stage-2 RX demod status on 2026-06-10/11:
 
 - Random PRBS external-like simulation passed for `+15 kHz` residual carrier offset:
   - `scripts/run_qpsk_rx_demod_random_external_sim.tcl`
@@ -202,8 +202,11 @@ Stage-2 RX demod status on 2026-06-10:
   - `locked_symbols=260`, `nco_corr=2560`
 - Re-run on 2026-06-11 after timing-pipeline cleanup also passed:
   - `locked_symbols=260`, `valid_symbols=7621`, `nco_corr=2560`
-- The current blind-lock logic is intentionally conservative: it waits longer before blind acquisition, scans coarse NCO correction candidates, suppresses blind score accumulation immediately after phase-bin movement, and avoids first-round lock on small coarse-frequency candidates. This prevents early false lock in random/PRBS tests while preserving the known Gray-cycle path.
-- Open carrier-recovery note: a top-level negative-offset experiment can still false-lock on the wrong coarse NCO candidate before calibration. The core-level negative-offset PRBS simulation passes, but a future Costas/decision-directed carrier acquisition upgrade should replace the current first-passing-candidate blind lock before claiming broad arbitrary external-transmitter tolerance.
+- Top-level external-RX negative-offset simulation now passes after requiring acquisition candidates to include stable adjacent-symbol transitions:
+  - `scripts/run_pl_comm_top_external_rx_neg_sim.tcl`
+  - `locked_symbols=260`, `valid_symbols=7863`, `nco_corr=-2560`
+- The current blind-lock logic is intentionally conservative: it waits longer before blind acquisition, scans coarse NCO correction candidates, suppresses blind score accumulation immediately after phase-bin movement, avoids first-round lock on small coarse-frequency candidates, and requires transition quality before scoring acquisition candidates. This prevents the observed early false lock in random/PRBS tests while preserving the known Gray-cycle path.
+- Open carrier-recovery note: the latest fixed-frequency positive/negative PRBS simulations pass, but this is still not a full Costas/Gardner synchronizer. A future decision-directed carrier acquisition/Costas loop and stronger timing recovery should replace the current coarse acquisition path before claiming broad arbitrary external-transmitter tolerance.
 
 ## Suggested Goal-Mode Execution Plan
 
