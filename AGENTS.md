@@ -107,6 +107,14 @@ For future automated work, run Vivado batch commands with escalation if the same
 - The smoke test intentionally writes under ignored `Vitis_WS/`, regenerates standalone BSP/FSBL from the XSA, and links `sw/baremetal_dma_rx/main.c` into a temporary ELF.
 - Vitis 2020.2 command-line `app create` / app-template discovery can hang in this environment; the smoke script avoids that path and uses the generated BSP plus ARM GCC directly.
 - The generated standalone BSP should use `ps7_uart_1` for stdin/stdout when UART export is needed.
+- A one-command board check is available for external-RX ILA capture plus decode thresholds:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1
+```
+
+- By default it programs `artifacts/external_rx/Ez_QPSK_external_rx.bit`, captures three ILA CSV files, and runs `Tool/python/decode_rx_demod_ila.py --check-external-rx` on each.
+- For local analog PRBS loopback smoke, use `-Mode loopback_prbs`.
 
 ## Board Bring-up Preference
 
@@ -179,6 +187,13 @@ Hardware result on 2026-06-10:
   - `lock_ratio=0`
   - `i_mean_abs_when_valid` and `q_mean_abs_when_valid` were about `1`
   - This is expected if no separate external QPSK source is feeding the ADC, because `external_rx` disables local DAC TX.
+- The new one-command board check reproduced the same current external-RX condition:
+  - `scripts/check_external_rx_board.ps1 -Repeat 1`
+  - `Tool/data/external_rx_board_check.csv`
+  - `adc_raw_span=3`
+  - `lock_ratio=0`
+  - check failures: `lock_ratio 0 < 0.5`, `adc_raw_span 3 < 16`
+  - This confirms the current blocker for true `external_rx` validation is missing/insufficient independent ADC input signal, not the capture/decode flow.
 - `scripts/init_ps7_fclk.tcl` reported no APU/Cortex-A9 target during this run (`AHB AP transaction error`), but Vivado still captured ILA successfully, so the active FCLK/debug path was sufficient for the capture. If this repeats after a board reset, check PS power/reset/boot mode before relying on XSCT PS initialization.
 
 ## Simulation Status
