@@ -26,6 +26,7 @@ localparam integer MIN_NCO_CORR = 96;
 localparam real FS_HZ = 100000000.0;
 localparam real CARRIER_HZ = 7000000.0;
 localparam real CARRIER_OFFSET_HZ = 15000.0;
+localparam integer EXPECT_NCO_SIGN = 1;
 localparam real TX_SYMBOL_RATE_HZ = 2006000.0;
 localparam real PHASE_OFFSET_DEG = 77.0;
 localparam real ADC_AMPLITUDE = 150.0;
@@ -370,6 +371,12 @@ always @(posedge clk_adc or negedge rst_n) begin
                     if (locked_cnt >= TARGET_LOCKED_SYMS) begin
                         if (abs_integer(u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.nco_freq_corr) < MIN_NCO_CORR) begin
                             tb_fail("ERR_NCO_FREQ_TRACK_NOT_ACTIVE");
+                        end
+                        if (((EXPECT_NCO_SIGN > 0) &&
+                             (u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.nco_freq_corr < MIN_NCO_CORR)) ||
+                            ((EXPECT_NCO_SIGN < 0) &&
+                             (u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.nco_freq_corr > -MIN_NCO_CORR))) begin
+                            tb_fail("ERR_NCO_FREQ_TRACK_SIGN");
                         end
                         $display("[TB_TOP_EXT_RX][PASS] %0t ns: top external RX recovered symbols, locked_symbols=%0d valid_symbols=%0d phase=%0d rot=%0d blind_score=%0d nco_corr=%0d offset=%0d map_rot=%0d",
                                  $time, locked_cnt, rx_valid_cnt,
