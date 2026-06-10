@@ -50,6 +50,7 @@
 
 最近验证：
 
+- 2026-06-11：`run_pl_comm_top_external_rx_sim.tcl` 在 RX demod timing-pipeline 调整后回归通过，`locked_symbols=260`，`valid_symbols=7621`，`nco_corr=2560`。
 - 2026-06-10：`run_qpsk_rx_demod_random_external_sim.tcl` 和 `run_qpsk_rx_demod_random_external_neg_sim.tcl` 均通过，覆盖 PRBS QPSK、`+15 kHz/-15 kHz` 残余载波偏差、慢幅度/DC 漂移、噪声和独立符号率漂移。
 - 2026-06-10：`run_qpsk_rx_demod_loopback_sim.tcl` 回归通过，确认本地 Gray loopback 未受 PRBS 盲锁调参影响。
 - 2026-06-10：`run_pl_comm_top_external_rx_sim.tcl` 通过，确认顶层 `external_rx` 模式下 DAC 保持关闭，外部 ADC PRBS 输入可经 J11/debug 路径观察到稳定 lock。

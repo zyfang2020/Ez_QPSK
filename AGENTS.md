@@ -142,6 +142,17 @@ Hardware result on 2026-06-10:
   - symbol entropy `1.88/1.95/1.88` bits
   - `adc_raw_span=907/892/909`
   - Gray-cycle match ratio stayed low (`0.40/0.40/0.43`), as expected for PRBS rather than the fixed Gray cycle
+- After timing-pipeline cleanup in `qpsk_rx_fixed_demod.v`, `scripts/run_impl_check.tcl` now resets and rebuilds `synth_1` before `impl_1` so timing is checked against the current RTL, not a stale synthesis netlist.
+- Latest `loopback_prbs` build on 2026-06-11 passed implementation timing with setup slack `0.199 ns` and hold slack `0.042 ns`, and refreshed:
+  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.bit`
+  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.ltx`
+- Latest board captures after ADC power and the timing-clean bitstream also passed:
+  - `Tool/data/local_prbs_loopback_latest_ila_00..02.csv`
+  - `--check-external-rx` PASS for all three captures
+  - `lock_ratio=1`, `lock_score=255`
+  - `valid_count=20/21/20`
+  - `symbol_entropy_when_valid_bits=1.97095/1.9699/1.95272`
+  - `adc_raw_span=948/909/948`
 - `scripts/run_external_rx_bitstream.tcl -tclargs external_rx` generated `artifacts/external_rx/Ez_QPSK_external_rx.bit` and `.ltx`.
 - `external_rx` implementation passed timing with setup slack `0.007 ns` and hold slack `0.048 ns`; setup is positive but very tight, so later carrier/timing-loop additions need timing attention.
 - `scripts/export_current_xsa.tcl -tclargs -include-bit -out artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa` exported an XSA carrying the matching external-RX bitstream.
@@ -177,6 +188,8 @@ Stage-2 RX demod status on 2026-06-10:
   - `FIXED_TX_EN=0`, `FIXED_RX_EN=1`
   - local DAC output stayed zero while external ADC PRBS samples demodulated
   - `locked_symbols=260`, `nco_corr=2560`
+- Re-run on 2026-06-11 after timing-pipeline cleanup also passed:
+  - `locked_symbols=260`, `valid_symbols=7621`, `nco_corr=2560`
 - The current blind-lock logic is intentionally conservative: it waits longer before blind acquisition, scans coarse NCO correction candidates, suppresses blind score accumulation immediately after phase-bin movement, and avoids first-round lock on small coarse-frequency candidates. This prevents early false lock in random/PRBS tests while preserving the known Gray-cycle path.
 - Open carrier-recovery note: a top-level negative-offset experiment can still false-lock on the wrong coarse NCO candidate before calibration. The core-level negative-offset PRBS simulation passes, but a future Costas/decision-directed carrier acquisition upgrade should replace the current first-passing-candidate blind lock before claiming broad arbitrary external-transmitter tolerance.
 

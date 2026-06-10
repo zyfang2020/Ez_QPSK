@@ -1,5 +1,5 @@
 #!/usr/bin/env tclsh
-# Run impl_1 through route_design and check routed setup/hold slack.
+# Run synth_1 and impl_1 through route_design, then check routed setup/hold slack.
 # Usage:
 #   vivado -mode batch -source scripts/run_impl_check.tcl
 
@@ -36,17 +36,15 @@ if {[llength [get_runs impl_1]] == 0} {
 add_file_if_missing sources_1 [file join $repo_root "RTL" "modem" "qpsk_rx_fixed_demod.v"]
 update_compile_order -fileset sources_1
 
+reset_run synth_1
+launch_runs synth_1 -jobs 2
+wait_on_run synth_1
 set synth_status [get_property STATUS [get_runs synth_1]]
+puts "INFO: synth_1 status: $synth_status"
 if {[string first "Complete" $synth_status] < 0} {
-    reset_run synth_1
-    launch_runs synth_1 -jobs 2
-    wait_on_run synth_1
-    set synth_status [get_property STATUS [get_runs synth_1]]
-    if {[string first "Complete" $synth_status] < 0} {
-        puts "ERROR: synth_1 did not complete successfully: $synth_status"
-        close_project
-        exit 1
-    }
+    puts "ERROR: synth_1 did not complete successfully: $synth_status"
+    close_project
+    exit 1
 }
 
 reset_run impl_1

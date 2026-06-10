@@ -67,7 +67,6 @@ localparam integer FREQ_CORR_W = 16;
 localparam signed [FREQ_CORR_W-1:0] FREQ_CORR_STEP = 16'sd16;
 localparam signed [FREQ_CORR_W-1:0] FREQ_CORR_MAX = 16'sd8192;
 localparam signed [FREQ_CORR_W-1:0] FREQ_CORR_MIN = -16'sd8192;
-localparam [FREQ_CORR_W-1:0] BLIND_MIN_FREQ_CORR = 16'd2560;
 localparam signed [FREQ_CORR_W-1:0] ACQ_FREQ_STEP = 16'sd512;
 localparam signed [FREQ_CORR_W-1:0] ACQ_FREQ_MAX = 16'sd4096;
 localparam [4:0] ACQ_FREQ_LAST_IDX = 5'd16;
@@ -75,12 +74,15 @@ localparam [8:0] ACQ_FREQ_DWELL_SYMS = 9'd384;
 localparam [15:0] BLIND_ACQ_DELAY_SYMS = 16'd256;
 localparam [15:0] BLIND_MIN_ABS = 16'd24;
 localparam [17:0] BLIND_ERR_LIMIT = 18'd256;
+localparam [17:0] BLIND_FINE_ERR_LIMIT = 18'd128;
 localparam [4:0] BLIND_PHASE_GUARD_SYMS = 5'd12;
-localparam [7:0] BLIND_LOCK_THRESHOLD = 8'd160;
-localparam [7:0] BLIND_RELEASE_LEVEL = 8'd80;
-localparam [7:0] LOCK_RELEASE_LEVEL = (LOCK_THRESHOLD > 16) ?
-                                      (LOCK_THRESHOLD[7:0] - 8'd8) :
-                                      (LOCK_THRESHOLD[7:0] >> 1);
+localparam [7:0] BLIND_LOCK_THRESHOLD = 8'd224;
+localparam [7:0] BLIND_RELEASE_LEVEL = 8'd112;
+localparam [7:0] PATTERN_LOCK_THRESHOLD = (LOCK_THRESHOLD[7:0] > 8'd160) ?
+                                          LOCK_THRESHOLD[7:0] : 8'd160;
+localparam [7:0] LOCK_RELEASE_LEVEL = (PATTERN_LOCK_THRESHOLD > 16) ?
+                                      (PATTERN_LOCK_THRESHOLD - 8'd8) :
+                                      (PATTERN_LOCK_THRESHOLD >> 1);
 localparam [ADC_SIGNED_W-1:0] ADC_MID = (1 << (ADC_DW-1));
 localparam [1:0] TRACK_IDLE   = 2'd0;
 localparam [1:0] TRACK_OFFSET = 2'd1;
@@ -93,6 +95,13 @@ reg [5:0] sample_phase;
 reg [4:0] acq_freq_idx;
 reg [8:0] acq_freq_dwell;
 reg acq_freq_wrapped;
+reg [9:0] acq_candidate_score;
+reg [9:0] acq_best_score;
+reg signed [FREQ_CORR_W-1:0] acq_best_freq;
+reg [3:0] acq_best_phase_bin;
+reg acq_symbol_score_valid;
+reg acq_symbol_score_fine;
+reg acq_apply_best_pending;
 reg [7:0] timing_epoch_cnt;
 reg timing_ready;
 reg [5:0] best_phase;
@@ -154,6 +163,9 @@ reg signed [CORR_W-1:0] corr_q_in_q;
 reg [1:0] corr_sym_base_q;
 reg corr_update_pending;
 reg signed [12:0] dd_phase_acc;
+reg dd_nco_step_pending;
+reg dd_nco_step_up;
+reg blind_phase_guard_set_pending;
 
 integer n;
 
@@ -164,6 +176,11 @@ reg [5:0] timing_phase_delta;
 reg signed [4:0] timing_acc_next;
 reg [7:0] lock_score_next;
 reg [7:0] blind_score_next;
+reg pattern_lock_now;
+reg [9:0] acq_candidate_score_next;
+reg [9:0] acq_best_score_next;
+reg signed [FREQ_CORR_W-1:0] acq_best_freq_next;
+reg [3:0] acq_best_phase_bin_next;
 reg [1:0] exp_sym_tmp;
 reg [1:0] exp_lock_sym;
 reg [CORR_W-1:0] corr_mag_tmp;
@@ -224,10 +241,11 @@ wire [15:0] dd_abs_q;
 wire [15:0] dd_min_abs;
 wire [17:0] dd_abs_phase_err;
 wire blind_train_active;
+wire pattern_track_active;
 wire decision_track_active;
 wire blind_symbol_confident;
 wire blind_symbol_stable;
-wire [FREQ_CORR_W-1:0] nco_freq_corr_abs;
+wire blind_symbol_fine;
 wire blind_acq_candidate_ready;
 
 reg signed [12:0] dd_acc_next;
@@ -300,16 +318,15 @@ assign dd_min_abs = (dd_abs_i < dd_abs_q) ? dd_abs_i : dd_abs_q;
 assign dd_abs_phase_err = abs18(dd_phase_err);
 assign blind_train_active = timing_ready && (!track_locked) &&
                             (sym_count >= BLIND_ACQ_DELAY_SYMS);
+assign pattern_track_active = !blind_train_active || track_locked;
 assign decision_track_active = track_locked || blind_locked || blind_train_active;
 assign blind_symbol_confident = (dd_min_abs >= BLIND_MIN_ABS) &&
                                 (dd_abs_phase_err <= BLIND_ERR_LIMIT);
 assign blind_symbol_stable = blind_symbol_confident &&
                              (blind_phase_guard == 5'd0);
-assign nco_freq_corr_abs = nco_freq_corr[FREQ_CORR_W-1] ?
-                           (~nco_freq_corr + {{(FREQ_CORR_W-1){1'b0}}, 1'b1}) :
-                           nco_freq_corr;
-assign blind_acq_candidate_ready = blind_locked || acq_freq_wrapped ||
-                                   (nco_freq_corr_abs >= BLIND_MIN_FREQ_CORR);
+assign blind_symbol_fine = blind_symbol_stable &&
+                           (dd_abs_phase_err <= BLIND_FINE_ERR_LIMIT);
+assign blind_acq_candidate_ready = blind_locked || acq_freq_wrapped;
 
 generate
     if (SPS != 50) begin : g_sps_not_supported
@@ -496,6 +513,13 @@ always @(posedge clk) begin
         acq_freq_idx     <= 5'd0;
         acq_freq_dwell   <= 9'd0;
         acq_freq_wrapped <= 1'b0;
+        acq_candidate_score <= 10'd0;
+        acq_best_score   <= 10'd0;
+        acq_best_freq    <= {FREQ_CORR_W{1'b0}};
+        acq_best_phase_bin <= 4'd0;
+        acq_symbol_score_valid <= 1'b0;
+        acq_symbol_score_fine <= 1'b0;
+        acq_apply_best_pending <= 1'b0;
         timing_epoch_cnt <= 8'd0;
         timing_ready     <= 1'b0;
         best_phase       <= 6'd0;
@@ -551,6 +575,9 @@ always @(posedge clk) begin
         corr_sym_base_q  <= 2'b00;
         corr_update_pending <= 1'b0;
         dd_phase_acc     <= 13'sd0;
+        dd_nco_step_pending <= 1'b0;
+        dd_nco_step_up   <= 1'b0;
+        blind_phase_guard_set_pending <= 1'b0;
         m_sym            <= 2'b00;
         m_valid          <= 1'b0;
         m_lock           <= 1'b0;
@@ -574,6 +601,13 @@ always @(posedge clk) begin
         acq_freq_idx     <= 5'd0;
         acq_freq_dwell   <= 9'd0;
         acq_freq_wrapped <= 1'b0;
+        acq_candidate_score <= 10'd0;
+        acq_best_score   <= 10'd0;
+        acq_best_freq    <= {FREQ_CORR_W{1'b0}};
+        acq_best_phase_bin <= 4'd0;
+        acq_symbol_score_valid <= 1'b0;
+        acq_symbol_score_fine <= 1'b0;
+        acq_apply_best_pending <= 1'b0;
         timing_epoch_cnt <= 8'd0;
         timing_ready     <= 1'b0;
         best_phase       <= 6'd0;
@@ -629,6 +663,9 @@ always @(posedge clk) begin
         corr_sym_base_q  <= 2'b00;
         corr_update_pending <= 1'b0;
         dd_phase_acc     <= 13'sd0;
+        dd_nco_step_pending <= 1'b0;
+        dd_nco_step_up   <= 1'b0;
+        blind_phase_guard_set_pending <= 1'b0;
         m_sym            <= 2'b00;
         m_valid          <= 1'b0;
         m_lock           <= 1'b0;
@@ -655,6 +692,33 @@ always @(posedge clk) begin
         mix_valid <= 1'b0;
         rot_req_valid <= 1'b0;
         rot_dec_valid <= rot_req_valid;
+
+        if (acq_apply_best_pending && !rot_dec_valid) begin
+            acq_apply_best_pending <= 1'b0;
+            dd_nco_step_pending <= 1'b0;
+            nco_freq_corr <= acq_best_freq;
+            phase_bin <= acq_best_phase_bin;
+            dd_phase_acc <= 13'sd0;
+        end else if (dd_nco_step_pending && !rot_dec_valid) begin
+            dd_nco_step_pending <= 1'b0;
+            if (dd_nco_step_up) begin
+                if (nco_freq_corr <= (FREQ_CORR_MAX - FREQ_CORR_STEP)) begin
+                    nco_freq_corr <= nco_freq_corr + FREQ_CORR_STEP;
+                end else begin
+                    nco_freq_corr <= FREQ_CORR_MAX;
+                end
+            end else begin
+                if (nco_freq_corr >= (FREQ_CORR_MIN + FREQ_CORR_STEP)) begin
+                    nco_freq_corr <= nco_freq_corr - FREQ_CORR_STEP;
+                end else begin
+                    nco_freq_corr <= FREQ_CORR_MIN;
+                end
+            end
+        end
+        if (blind_phase_guard_set_pending && !rot_dec_valid) begin
+            blind_phase_guard_set_pending <= 1'b0;
+            blind_phase_guard <= BLIND_PHASE_GUARD_SYMS;
+        end
 
         if (corr_update_pending) begin
             corr_update_pending <= 1'b0;
@@ -697,20 +761,26 @@ always @(posedge clk) begin
 
             exp_lock_sym = rot_exp_sym_d;
             lock_score_next = lock_score;
-            if (dec_sym_done == exp_lock_sym) begin
-                if (lock_score != 8'hff) begin
-                    lock_score_next = lock_score + 8'd1;
+            if (pattern_track_active) begin
+                if (dec_sym_done == exp_lock_sym) begin
+                    if (lock_score != 8'hff) begin
+                        lock_score_next = lock_score + 8'd1;
+                    end
+                end else begin
+                    if (lock_score != 8'd0) begin
+                        lock_score_next = lock_score - 8'd1;
+                    end
                 end
             end else begin
-                if (lock_score != 8'd0) begin
-                    lock_score_next = lock_score - 8'd1;
-                end
+                lock_score_next = 8'd0;
             end
             lock_score <= lock_score_next;
+            pattern_lock_now = pattern_track_active &&
+                               (lock_score_next >= PATTERN_LOCK_THRESHOLD);
 
-            if (lock_score_next >= LOCK_THRESHOLD[7:0]) begin
+            if (pattern_lock_now) begin
                 track_locked <= 1'b1;
-            end else if (lock_score_next <= LOCK_RELEASE_LEVEL) begin
+            end else if ((!pattern_track_active) || (lock_score_next <= LOCK_RELEASE_LEVEL)) begin
                 track_locked <= 1'b0;
             end
 
@@ -730,6 +800,20 @@ always @(posedge clk) begin
             end
             blind_lock_score <= blind_score_next;
 
+            acq_candidate_score_next = acq_candidate_score;
+            if (acq_symbol_score_valid) begin
+                if (acq_candidate_score < (acq_symbol_score_fine ? 10'h3fe : 10'h3ff)) begin
+                    acq_candidate_score_next = acq_candidate_score +
+                                               (acq_symbol_score_fine ? 10'd2 : 10'd1);
+                end else begin
+                    acq_candidate_score_next = 10'h3ff;
+                end
+            end
+            acq_symbol_score_valid <= blind_train_active && !track_locked &&
+                                      !blind_locked && !acq_freq_wrapped &&
+                                      blind_symbol_stable;
+            acq_symbol_score_fine <= blind_symbol_fine;
+
             if (blind_score_next >= BLIND_LOCK_THRESHOLD) begin
                 blind_locked <= 1'b1;
             end else if (blind_score_next <= BLIND_RELEASE_LEVEL) begin
@@ -738,13 +822,13 @@ always @(posedge clk) begin
 
             m_sym   <= dec_sym_done;
             m_valid <= 1'b1;
-            m_lock  <= track_locked || (lock_score_next >= LOCK_THRESHOLD[7:0]) ||
+            m_lock  <= track_locked || pattern_lock_now ||
                        blind_locked || (blind_score_next >= BLIND_LOCK_THRESHOLD);
             dbg_i   <= rot_i_reg >>> (NCO_W + 4);
             dbg_q   <= rot_q_reg >>> (NCO_W + 4);
             sym_count <= sym_count + 16'd1;
 
-            if (decision_track_active || (lock_score_next >= LOCK_THRESHOLD[7:0]) ||
+            if (decision_track_active || pattern_lock_now ||
                 (blind_score_next >= BLIND_LOCK_THRESHOLD)) begin
                 dd_acc_next = dd_phase_acc;
                 if (dd_phase_err > DD_ERR_DEADBAND) begin
@@ -761,72 +845,94 @@ always @(posedge clk) begin
                     phase_bin <= phase_bin + 4'd1;
                     if (blind_train_active && !track_locked && !blind_locked &&
                         (blind_score_next < BLIND_LOCK_THRESHOLD)) begin
-                        blind_phase_guard <= BLIND_PHASE_GUARD_SYMS;
+                        blind_phase_guard_set_pending <= 1'b1;
                     end
                     dd_phase_acc <= dd_acc_next - DD_ACC_LIMIT;
-                    if (track_locked || blind_locked ||
-                        (lock_score_next >= LOCK_THRESHOLD[7:0]) ||
+                    if (track_locked || blind_locked || pattern_lock_now ||
                         (blind_score_next >= BLIND_LOCK_THRESHOLD)) begin
-                        if (nco_freq_corr <= (FREQ_CORR_MAX - FREQ_CORR_STEP)) begin
-                            nco_freq_corr <= nco_freq_corr + FREQ_CORR_STEP;
-                        end else begin
-                            nco_freq_corr <= FREQ_CORR_MAX;
-                        end
+                        dd_nco_step_pending <= 1'b1;
+                        dd_nco_step_up <= 1'b1;
                     end
                 end else if (dd_acc_next <= -DD_ACC_LIMIT) begin
                     phase_bin <= phase_bin - 4'd1;
                     if (blind_train_active && !track_locked && !blind_locked &&
                         (blind_score_next < BLIND_LOCK_THRESHOLD)) begin
-                        blind_phase_guard <= BLIND_PHASE_GUARD_SYMS;
+                        blind_phase_guard_set_pending <= 1'b1;
                     end
                     dd_phase_acc <= dd_acc_next + DD_ACC_LIMIT;
-                    if (track_locked || blind_locked ||
-                        (lock_score_next >= LOCK_THRESHOLD[7:0]) ||
+                    if (track_locked || blind_locked || pattern_lock_now ||
                         (blind_score_next >= BLIND_LOCK_THRESHOLD)) begin
-                        if (nco_freq_corr >= (FREQ_CORR_MIN + FREQ_CORR_STEP)) begin
-                            nco_freq_corr <= nco_freq_corr - FREQ_CORR_STEP;
-                        end else begin
-                            nco_freq_corr <= FREQ_CORR_MIN;
-                        end
+                        dd_nco_step_pending <= 1'b1;
+                        dd_nco_step_up <= 1'b0;
                     end
                 end else begin
                     dd_phase_acc <= dd_acc_next;
                 end
             end else begin
                 dd_phase_acc <= 13'sd0;
-                nco_freq_corr <= {FREQ_CORR_W{1'b0}};
+                dd_nco_step_pending <= 1'b0;
             end
 
             if (blind_train_active && !track_locked && !blind_locked &&
-                (lock_score_next < LOCK_THRESHOLD[7:0]) &&
-                (blind_score_next < BLIND_LOCK_THRESHOLD)) begin
+                !acq_freq_wrapped &&
+                !pattern_lock_now &&
+                (blind_lock_score < BLIND_LOCK_THRESHOLD)) begin
                 if (acq_freq_dwell >= (ACQ_FREQ_DWELL_SYMS - 9'd1)) begin
+                    acq_best_score_next = acq_best_score;
+                    acq_best_freq_next = acq_best_freq;
+                    acq_best_phase_bin_next = acq_best_phase_bin;
+                    if (acq_candidate_score_next > acq_best_score) begin
+                        acq_best_score_next = acq_candidate_score_next;
+                        acq_best_freq_next = acq_freq_value(acq_freq_idx);
+                        acq_best_phase_bin_next = phase_bin;
+                    end
+
                     acq_freq_dwell <= 9'd0;
+                    acq_candidate_score <= 10'd0;
+                    acq_best_score <= acq_best_score_next;
+                    acq_best_freq <= acq_best_freq_next;
+                    acq_best_phase_bin <= acq_best_phase_bin_next;
                     blind_lock_score <= 8'd0;
-                    blind_phase_guard <= 5'd0;
+                    blind_phase_guard <= BLIND_PHASE_GUARD_SYMS;
+                    blind_phase_guard_set_pending <= 1'b0;
                     dd_phase_acc <= 13'sd0;
+                    dd_nco_step_pending <= 1'b0;
                     if (acq_freq_idx >= ACQ_FREQ_LAST_IDX) begin
                         acq_freq_idx <= 5'd0;
                         acq_freq_wrapped <= 1'b1;
-                        nco_freq_corr <= acq_freq_value(5'd0);
+                        acq_apply_best_pending <= 1'b1;
                     end else begin
                         acq_freq_idx <= acq_freq_idx + 5'd1;
                         nco_freq_corr <= acq_freq_value(acq_freq_idx + 5'd1);
                     end
                 end else begin
                     acq_freq_dwell <= acq_freq_dwell + 9'd1;
+                    acq_candidate_score <= acq_candidate_score_next;
                     nco_freq_corr <= acq_freq_value(acq_freq_idx);
                 end
             end else if (track_locked || blind_locked ||
-                         (lock_score_next >= LOCK_THRESHOLD[7:0]) ||
-                         (blind_score_next >= BLIND_LOCK_THRESHOLD)) begin
+                         pattern_lock_now ||
+                         (blind_lock_score >= BLIND_LOCK_THRESHOLD)) begin
                 acq_freq_idx <= 5'd0;
                 acq_freq_dwell <= 9'd0;
+                acq_candidate_score <= 10'd0;
+                acq_symbol_score_valid <= 1'b0;
+                acq_apply_best_pending <= 1'b0;
+                blind_phase_guard_set_pending <= 1'b0;
                 blind_phase_guard <= 5'd0;
             end else if (!blind_train_active) begin
                 acq_freq_idx <= 5'd0;
                 acq_freq_dwell <= 9'd0;
                 acq_freq_wrapped <= 1'b0;
+                acq_candidate_score <= 10'd0;
+                acq_best_score <= 10'd0;
+                acq_best_freq <= {FREQ_CORR_W{1'b0}};
+                acq_best_phase_bin <= 4'd0;
+                acq_symbol_score_valid <= 1'b0;
+                acq_apply_best_pending <= 1'b0;
+                dd_nco_step_pending <= 1'b0;
+                blind_phase_guard_set_pending <= 1'b0;
+                nco_freq_corr <= {FREQ_CORR_W{1'b0}};
                 blind_phase_guard <= 5'd0;
             end
         end else begin

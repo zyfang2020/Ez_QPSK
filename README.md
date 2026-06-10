@@ -35,6 +35,7 @@
 - 已完成：新增 external RX ILA 抓取脚本，可连接 Hardware Manager、可选烧录 external RX bitstream，并把 ILA 数据导出为 CSV。
 - 已完成：新增 external RX ILA CSV 解码工具，可从 Hardware Manager 导出的 `probe2` 数据中解出 lock ratio、lock score、I/Q、timing phase、NCO 频偏校正和符号统计。
 - 已完成：新增本地 `loopback_prbs` 上板模式，可把内部 QPSK TX 从固定 Gray 循环切到 PRBS7 符号流，用于观察非周期符号工况下的 ADC 幅度、I/Q 活动和硬判决分布。
+- 已完成：`loopback_prbs` 本地模拟回环上板验证通过。当前路径为 `PL TX -> DAC -> 外部滤波/放大链路 -> ADC -> PL RX demod`，最新版 ILA 三次抓取均通过 `--check-external-rx`。
 - 当前工程定位：保留原 BD/PS/DMA 主结构，在 ADC capture 后并联在线解调 debug 支路。
 - 未完成：真实外部 QPSK 发射机上板联调，更完整的盲锁定/误码统计，协议化上位机数据接入。
 
@@ -118,7 +119,7 @@
 - 当前在线解调已覆盖本地固定 Gray loopback 仿真，不等同于外部发射机全场景锁定。
 - 当前 decision-directed 相位微调、锁前频偏扫描、锁后 NCO 频偏微调和 early/late 定时跟踪已覆盖固定频点残余频偏与仿真外部符号率漂移，仍不等同于真实射频环境的完整盲同步链。
 - 当前 RX demod 优先使用本地 Gray 相关锁定；若长期不能匹配该测试模式，会进入盲锁分支，用星座置信度和 decision-directed 相位误差形成外部随机数据的 lock。ILA 中的 `rx_demod_dbg_lock_score` 显示 Gray/盲锁两路质量分数中的较高值。
-- `loopback_prbs` 是随机符号压力测试模式。2026-06-10 板上 ILA 显示 ADC/DAC/IQ/硬判决活动正常，但当前 `rx_demod_lock` 未声明锁定；因此它暂时用于观察非 Gray 工况，不作为正式解调验收 PASS。后续需要增强 blind lock 或加入 TX PRBS 参考校验。
+- `loopback_prbs` 是随机符号压力测试模式，也已作为本地模拟回环的阶段性硬件验收通过。2026-06-11 最新 ILA 三次抓取 `Tool/data/local_prbs_loopback_latest_ila_00..02.csv` 均通过 `--check-external-rx`：`lock_ratio=1`，`lock_score=255`，有效符号数 `20/21/20`，ADC span `948/909/948`，符号熵约 `1.95..1.97` bits。PRBS 下 Gray-cycle 匹配率低是预期现象，不作为失败依据。
 - external RX bitstream 的 `.ltx` 中，BD ILA `probe2` 连接 `rx_demod_dbg_bus[95:0]`。位域：`[95:80]` signed `nco_freq_corr`，`[79:64]` I，`[63:48]` Q，`[47:40]` lock score，`[39:34]` best timing phase，`[33:30]` phase bin，`[29]` lock，`[28]` valid，`[27:26]` symbol，`[25:16]` raw ADC pins，`[15:0]` captured ADC stream sample。
 - external RX bitstream 中，BD ILA 使用 PS `FCLK_CLK0` 采样，与 RX demod 同域；J11 管脚仍建议同时观察实时 bit/lock。
 - 当前“ADC->AXI->DDR”链路仍保留，在线解调支路不替代原始采样搬运。
@@ -259,7 +260,7 @@
 
 ### 3.6 当前阶段下一步（对齐阶段 2）
 
-1. 运行 `scripts/run_external_rx_bitstream.tcl` 生成 external RX 上板镜像，用 J11 `rx_demod_bit/rx_demod_lock` 对真实外部 QPSK 输入做可观测验证。
+1. 本地模拟回环 `loopback_prbs` 已通过；下一步切到 `external_rx` 镜像，用 J11 `rx_demod_bit/rx_demod_lock` 和 ILA 对真实外部 QPSK 输入做可观测验证。
 2. 运行 `scripts/capture_external_rx_ila.tcl -tclargs -list` 确认 Vivado 能看到 JTAG target、`xc7z020` device 和 ILA core。
 3. 运行 `scripts/capture_external_rx_ila.tcl` 抓取 ILA CSV，再用 `Tool/python/decode_rx_demod_ila.py --check-external-rx` 解码 `rx_demod_dbg_bus`，检查 lock ratio、lock score、I/Q 幅度、timing phase、ADC span 和 `nco_freq_corr` Hz 换算值；若外部源发 Gray 循环，则追加 `--check-gray-cycle` 做更接近验收的符号序列检查。
 4. 外部信号建议先从约 `7 MHz` 载波、`2 Msym/s`、中等 ADC 幅度开始；若 `rx_demod_lock` 不稳定，优先同时抓取 ADC 原始样本做离线频谱/星座交叉验证。
