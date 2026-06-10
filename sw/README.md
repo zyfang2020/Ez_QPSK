@@ -32,6 +32,13 @@
 & "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/test_vitis_xsa_build.tcl artifacts\xsa\Ez_QPSK_current.xsa Vitis_WS\codex_xsa_smoke_current
 ```
 
+当前 external RX 带 bitstream XSA 的 smoke 入口：
+
+```powershell
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/export_current_xsa.tcl -tclargs -include-bit -out artifacts\xsa\Ez_QPSK_external_rx_with_bit.xsa
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/test_vitis_xsa_build.tcl artifacts\xsa\Ez_QPSK_external_rx_with_bit.xsa Vitis_WS\codex_xsa_smoke_external_rx_latest
+```
+
 该流程会：
 
 1. 从当前 Vivado 工程导出 XSA。
@@ -51,7 +58,7 @@
 ## 当前边界
 
 - 这里先只做“最小裸机 DMA 接收”
-- 暂不引入在线解调
+- PL 侧在线解调已通过 J11/ILA 可观测；当前 PS 裸机示例还不读取或统计在线解调结果
 - 暂不引入 Linux / PetaLinux
 - 暂不引入网口发送
 
@@ -60,4 +67,4 @@
 1. 连续采集
 2. 数据导出
 3. 网口发送
-4. 在线解调
+4. PS 侧读取在线解调状态、符号或误码统计

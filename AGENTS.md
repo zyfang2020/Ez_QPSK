@@ -157,6 +157,18 @@ Hardware result on 2026-06-10:
 - `external_rx` implementation passed timing with setup slack `0.007 ns` and hold slack `0.048 ns`; setup is positive but very tight, so later carrier/timing-loop additions need timing attention.
 - `scripts/export_current_xsa.tcl -tclargs -include-bit -out artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa` exported an XSA carrying the matching external-RX bitstream.
 - `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx` passed: Vitis regenerated the standalone BSP/FSBL and linked `sw/baremetal_dma_rx/main.c` into a smoke ELF.
+- Latest `external_rx` rebuild on 2026-06-11 after timing-pipeline cleanup passed implementation timing with setup slack `0.181 ns` and hold slack `0.044 ns`, and refreshed:
+  - `artifacts/external_rx/Ez_QPSK_external_rx.bit`
+  - `artifacts/external_rx/Ez_QPSK_external_rx.ltx`
+  - `artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa`
+- `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx_latest` passed for the refreshed XSA.
+- Programming the refreshed `external_rx` image and capturing ILA succeeded, but the current ADC input was only near-midscale noise:
+  - `Tool/data/external_rx_latest_ila_00..02.csv`
+  - `adc_raw_span=3/2/2`
+  - `lock_ratio=0`
+  - `i_mean_abs_when_valid` and `q_mean_abs_when_valid` were about `1`
+  - This is expected if no separate external QPSK source is feeding the ADC, because `external_rx` disables local DAC TX.
+- `scripts/init_ps7_fclk.tcl` reported no APU/Cortex-A9 target during this run (`AHB AP transaction error`), but Vivado still captured ILA successfully, so the active FCLK/debug path was sufficient for the capture. If this repeats after a board reset, check PS power/reset/boot mode before relying on XSCT PS initialization.
 
 ## Simulation Status
 
