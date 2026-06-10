@@ -86,6 +86,13 @@ For future automated work, run Vivado batch commands with escalation if the same
 ## PS / XSA / Vitis Notes
 
 - Because the PL sample clock path depends on PS `FCLK_CLK0`, board bring-up needs PS initialization, not only raw PL bitstream download.
+- A JTAG helper is available to initialize PS clocks before ILA capture:
+
+```powershell
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl
+```
+
+- Run this after programming PL, or run an equivalent FSBL/application flow, before trying to refresh Vivado ILA/debug hub. If PS `FCLK_CLK0` is not active, Vivado can program the FPGA but may report that the design has no supported debug core or that `dbg_hub` is not detected.
 - After a PL milestone that affects the exported hardware, refresh the PS-side hardware platform:
   1. Set the intended board mode. For local analog loopback, use `loopback` (`FIXED_TX_EN=1`, `FIXED_RX_EN=1`). For a purely external ADC source, use `external_rx` (`FIXED_TX_EN=0`, `FIXED_RX_EN=1`).
   2. Generate the matching bitstream when the PL image changed.
@@ -107,6 +114,19 @@ For future automated work, run Vivado batch commands with escalation if the same
   `PL TX -> DAC -> external filter/analog path -> ADC -> PL RX demod`.
 - This requires both DA and AD paths to be working and uses `loopback` mode with TX and RX enabled.
 - After local analog loopback is stable, switch to `external_rx` mode for a separate external QPSK transmitter feeding the ADC.
+
+Hardware result on 2026-06-10:
+
+- JTAG detected one Digilent target and `xc7z020_1`.
+- `scripts/run_external_rx_bitstream.tcl -tclargs loopback` generated `artifacts/loopback/Ez_QPSK_loopback.bit` and `.ltx`.
+- Loopback implementation passed timing with setup slack `0.120 ns` and hold slack `0.027 ns`.
+- Programming PL without PS clock initialization reached DONE but Vivado could not detect `dbg_hub`.
+- After running `scripts/init_ps7_fclk.tcl`, Vivado detected one ILA core and captured `Tool/data/loopback_ila.csv`.
+- `Tool/python/decode_rx_demod_ila.py Tool/data/loopback_ila.csv --check-gray-cycle` passed:
+  - `lock_ratio=1`
+  - `valid_count=20`
+  - Gray-cycle best match ratio `1`
+  - `adc_raw_span=794`
 
 ## Simulation Status
 

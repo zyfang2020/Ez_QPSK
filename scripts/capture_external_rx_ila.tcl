@@ -256,6 +256,7 @@ if {$program_first} {
     refresh_hw_device $dev
 } elseif {!$list_only} {
     set_property PROBES.FILE $ltx_path $dev
+    refresh_hw_device $dev
 }
 
 set ilas [get_hw_ilas -quiet *]

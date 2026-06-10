@@ -1,23 +1,50 @@
 #!/usr/bin/env tclsh
-# Build an external-RX board image for PL-side QPSK demod bring-up.
+# Build a board image for PL-side QPSK demod bring-up.
 #
 # This keeps the existing BD/PS/DMA topology, sets the fixed RTL wrapper to
-# TX-off/RX-on, includes J11 demod debug pins, connects the existing ILA to
-# FCLK0/probe2 for RX demod debug, runs implementation through bitstream,
-# checks routed timing, and copies .bit/.ltx into artifacts/external_rx.
+# the requested RX mode, includes J11 demod debug pins, connects the existing
+# ILA to FCLK0/probe2 for RX demod debug, runs implementation through
+# bitstream, checks routed timing, and copies .bit/.ltx into artifacts/<mode>.
 #
 # Usage:
 #   vivado -mode batch -source scripts/run_external_rx_bitstream.tcl
+#   vivado -mode batch -source scripts/run_external_rx_bitstream.tcl -tclargs external_rx
+#   vivado -mode batch -source scripts/run_external_rx_bitstream.tcl -tclargs loopback
+#
+# Modes:
+#   external_rx : TX disabled, RX enabled. Use with an external QPSK source.
+#   loopback    : TX enabled, RX enabled. Use for local DAC-to-ADC bring-up.
 
 set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir ".."]]
 set xpr_path   [file join $repo_root "Ez_QPSK.xpr"]
 set bd_path    [file join $repo_root "Ez_QPSK.srcs" "sources_1" "bd" "zynq_dma" "zynq_dma.bd"]
 set j11_xdc    [file join $repo_root "Constraints" "pl_comm_top_io_ax7020_j11_debug.xdc"]
-set out_dir    [file join $repo_root "artifacts" "external_rx"]
 set cell_name  "pl_comm_top_fixed_cfg_0"
 set ila_name   "ila_0"
 set demod_dbg_bus_w 96
+
+set mode "external_rx"
+if {[llength $argv] > 0} {
+    set mode [lindex $argv 0]
+}
+
+switch -- $mode {
+    external_rx {
+        set fixed_tx_en 0
+        set fixed_rx_en 1
+    }
+    loopback {
+        set fixed_tx_en 1
+        set fixed_rx_en 1
+    }
+    default {
+        puts "ERROR: unknown mode '$mode'. Expected external_rx or loopback."
+        exit 1
+    }
+}
+
+set out_dir [file join $repo_root "artifacts" $mode]
 
 proc add_file_if_missing {fileset_name file_path} {
     set fs [get_filesets $fileset_name]
@@ -181,8 +208,8 @@ foreach prop {CONFIG.FIXED_TX_EN CONFIG.FIXED_RX_EN} {
 }
 
 set_property -dict [list \
-    CONFIG.FIXED_TX_EN 0 \
-    CONFIG.FIXED_RX_EN 1 \
+    CONFIG.FIXED_TX_EN $fixed_tx_en \
+    CONFIG.FIXED_RX_EN $fixed_rx_en \
 ] $cell_obj
 
 if {[catch {ensure_demod_ila_probe $cell_name $ila_name $demod_dbg_bus_w} ila_msg]} {
@@ -222,7 +249,7 @@ if {[string first "Complete" $impl_status] < 0} {
 }
 
 open_run impl_1
-set timing_rpt [file join $repo_root "Ez_QPSK.runs" "impl_1" "timing_external_rx_bitstream.rpt"]
+set timing_rpt [file join $repo_root "Ez_QPSK.runs" "impl_1" "timing_${mode}_bitstream.rpt"]
 report_timing_summary -file $timing_rpt
 
 set setup_paths [get_timing_paths -max_paths 1 -setup]
@@ -236,10 +263,10 @@ if {[llength $hold_paths] > 0} {
     set hold_slack [get_property SLACK [lindex $hold_paths 0]]
 }
 
-puts "INFO: external_rx setup slack: $setup_slack ns"
-puts "INFO: external_rx hold slack: $hold_slack ns"
+puts "INFO: $mode setup slack: $setup_slack ns"
+puts "INFO: $mode hold slack: $hold_slack ns"
 if {$setup_slack < 0.0 || $hold_slack < 0.0} {
-    puts "ERROR: external_rx timing check failed. See $timing_rpt"
+    puts "ERROR: $mode timing check failed. See $timing_rpt"
     close_project
     exit 1
 }
@@ -254,14 +281,14 @@ if {[llength $bit_candidates] == 0} {
 }
 
 set bit_src [lindex $bit_candidates 0]
-set bit_dst [file join $out_dir "Ez_QPSK_external_rx.bit"]
+set bit_dst [file join $out_dir "Ez_QPSK_${mode}.bit"]
 file copy -force $bit_src $bit_dst
 puts "INFO: copied bitstream: $bit_dst"
 
 set ltx_candidates [glob -nocomplain -directory $run_dir *.ltx]
 if {[llength $ltx_candidates] > 0} {
     set ltx_src [lindex $ltx_candidates 0]
-    set ltx_dst [file join $out_dir "Ez_QPSK_external_rx.ltx"]
+    set ltx_dst [file join $out_dir "Ez_QPSK_${mode}.ltx"]
     file copy -force $ltx_src $ltx_dst
     puts "INFO: copied probes: $ltx_dst"
 } else {
@@ -269,4 +296,4 @@ if {[llength $ltx_candidates] > 0} {
 }
 
 close_project
-puts "INFO: external_rx bitstream build completed."
+puts "INFO: $mode bitstream build completed."

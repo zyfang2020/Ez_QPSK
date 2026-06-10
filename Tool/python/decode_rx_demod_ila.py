@@ -30,7 +30,7 @@ def bits(value: int, hi: int, lo: int) -> int:
     return (value >> lo) & ((1 << (hi - lo + 1)) - 1)
 
 
-def parse_int_cell(text: str) -> tuple[int, bool]:
+def parse_int_cell(text: str, default_base: int | None = None) -> tuple[int, bool]:
     raw = text.strip().strip('"').replace("_", "")
     raw = raw.replace(" ", "")
     if not raw:
@@ -48,6 +48,12 @@ def parse_int_cell(text: str) -> tuple[int, bool]:
     if lower.startswith(("0b", "b")):
         token = lower[2:] if lower.startswith("0b") else lower[1:]
         return int(token or "0", 2), unknown
+    if default_base == 16:
+        return int(lower or "0", 16), unknown
+    if default_base == 2:
+        return int(lower or "0", 2), unknown
+    if default_base == 10:
+        return int(lower or "0", 10), unknown
     if re.fullmatch(r"[01]+", lower) and len(lower) > 1:
         return int(lower, 2), unknown
     return int(lower, 10), unknown
@@ -112,15 +118,37 @@ def decode_bus(value: int) -> dict[str, int]:
     }
 
 
-def read_rows(path: Path) -> tuple[list[str], list[list[str]]]:
+def is_radix_row(row: list[str]) -> bool:
+    return bool(row) and row[0].strip().lower().startswith("radix")
+
+
+def parse_radix_row(row: list[str]) -> dict[int, int]:
+    bases: dict[int, int] = {}
+    for idx, cell in enumerate(row):
+        token = cell.strip().upper()
+        if token == "HEX":
+            bases[idx] = 16
+        elif token in {"BIN", "BINARY"}:
+            bases[idx] = 2
+        elif token in {"UNSIGNED", "SIGNED", "DEC", "DECIMAL"}:
+            bases[idx] = 10
+    return bases
+
+
+def read_rows(path: Path) -> tuple[list[str], dict[int, int], list[list[str]]]:
     with path.open("r", newline="", encoding="utf-8-sig") as fh:
         raw_rows = list(csv.reader(fh))
     header_idx, header = find_header(raw_rows)
-    return header, raw_rows[header_idx + 1 :]
+    rows = raw_rows[header_idx + 1 :]
+    radix_bases: dict[int, int] = {}
+    if rows and is_radix_row(rows[0]):
+        radix_bases = parse_radix_row(rows[0])
+        rows = rows[1:]
+    return header, radix_bases, rows
 
 
 def iter_decoded(path: Path, bus_column: str | None = None) -> tuple[list[dict[str, int]], int]:
-    header, rows = read_rows(path)
+    header, radix_bases, rows = read_rows(path)
     vector_idx = choose_vector_column(header, bus_column)
     bit_columns = find_bit_columns(header)
     unknown_count = 0
@@ -137,7 +165,7 @@ def iter_decoded(path: Path, bus_column: str | None = None) -> tuple[list[dict[s
         if vector_idx is not None:
             if vector_idx >= len(row):
                 continue
-            value, unknown = parse_int_cell(row[vector_idx])
+            value, unknown = parse_int_cell(row[vector_idx], radix_bases.get(vector_idx))
             unknown_count += int(unknown)
         else:
             value = 0
@@ -145,7 +173,7 @@ def iter_decoded(path: Path, bus_column: str | None = None) -> tuple[list[dict[s
             for bit_idx, col_idx in bit_columns.items():
                 if col_idx >= len(row):
                     continue
-                bit_value, bit_unknown = parse_int_cell(row[col_idx])
+                bit_value, bit_unknown = parse_int_cell(row[col_idx], radix_bases.get(col_idx))
                 unknown |= bit_unknown
                 value |= (bit_value & 1) << bit_idx
             unknown_count += int(unknown)
