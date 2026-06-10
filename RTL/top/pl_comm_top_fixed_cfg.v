@@ -13,7 +13,8 @@ module pl_comm_top_fixed_cfg #(
     parameter integer FIFO_DEPTH = 2048,
     parameter integer PKT_LEN = 100000,
     parameter integer FIXED_TX_EN = 1,
-    parameter integer FIXED_RX_EN = 1
+    parameter integer FIXED_RX_EN = 1,
+    parameter integer FIXED_QPSK_MODE_SEL = 0
 ) (
     (* X_INTERFACE_PARAMETER = "XIL_INTERFACENAME clk_io" *)
     (* X_INTERFACE_INFO = "xilinx.com:signal:clock:1.0 clk_io CLK" *)
@@ -44,7 +45,7 @@ module pl_comm_top_fixed_cfg #(
 );
 
     localparam [1:0] TX_MODE_SEL_FIXED   = 2'd0;
-    localparam [1:0] QPSK_MODE_SEL_FIXED = 2'd0;
+    localparam [1:0] QPSK_MODE_SEL_FIXED = FIXED_QPSK_MODE_SEL[1:0];
     localparam [1:0] QPSK_CFG_SYM_FIXED  = 2'b00;
 
     (* keep = "true", mark_debug = "true" *) wire [1:0] rx_demod_sym_dbg;

@@ -34,6 +34,7 @@
 - 已完成：新增并验证 external RX bitstream batch 构建，产物输出到 `artifacts/external_rx/`；本次 route/write_bitstream 通过，setup slack `0.052 ns`、hold slack `0.046 ns`，`.ltx` 已包含 ILA `probe2` 的 `rx_demod_dbg_bus[95:0]`。
 - 已完成：新增 external RX ILA 抓取脚本，可连接 Hardware Manager、可选烧录 external RX bitstream，并把 ILA 数据导出为 CSV。
 - 已完成：新增 external RX ILA CSV 解码工具，可从 Hardware Manager 导出的 `probe2` 数据中解出 lock ratio、lock score、I/Q、timing phase、NCO 频偏校正和符号统计。
+- 已完成：新增本地 `loopback_prbs` 上板模式，可把内部 QPSK TX 从固定 Gray 循环切到 PRBS7 符号流，用于观察非周期符号工况下的 ADC 幅度、I/Q 活动和硬判决分布。
 - 当前工程定位：保留原 BD/PS/DMA 主结构，在 ADC capture 后并联在线解调 debug 支路。
 - 未完成：真实外部 QPSK 发射机上板联调，更完整的盲锁定/误码统计，协议化上位机数据接入。
 
@@ -117,6 +118,7 @@
 - 当前在线解调已覆盖本地固定 Gray loopback 仿真，不等同于外部发射机全场景锁定。
 - 当前 decision-directed 相位微调、锁前频偏扫描、锁后 NCO 频偏微调和 early/late 定时跟踪已覆盖固定频点残余频偏与仿真外部符号率漂移，仍不等同于真实射频环境的完整盲同步链。
 - 当前 RX demod 优先使用本地 Gray 相关锁定；若长期不能匹配该测试模式，会进入盲锁分支，用星座置信度和 decision-directed 相位误差形成外部随机数据的 lock。ILA 中的 `rx_demod_dbg_lock_score` 显示 Gray/盲锁两路质量分数中的较高值。
+- `loopback_prbs` 是随机符号压力测试模式。2026-06-10 板上 ILA 显示 ADC/DAC/IQ/硬判决活动正常，但当前 `rx_demod_lock` 未声明锁定；因此它暂时用于观察非 Gray 工况，不作为正式解调验收 PASS。后续需要增强 blind lock 或加入 TX PRBS 参考校验。
 - external RX bitstream 的 `.ltx` 中，BD ILA `probe2` 连接 `rx_demod_dbg_bus[95:0]`。位域：`[95:80]` signed `nco_freq_corr`，`[79:64]` I，`[63:48]` Q，`[47:40]` lock score，`[39:34]` best timing phase，`[33:30]` phase bin，`[29]` lock，`[28]` valid，`[27:26]` symbol，`[25:16]` raw ADC pins，`[15:0]` captured ADC stream sample。
 - external RX bitstream 中，BD ILA 使用 PS `FCLK_CLK0` 采样，与 RX demod 同域；J11 管脚仍建议同时观察实时 bit/lock。
 - 当前“ADC->AXI->DDR”链路仍保留，在线解调支路不替代原始采样搬运。
@@ -157,8 +159,11 @@
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/set_qpsk_rx_board_mode.tcl -tclargs external_rx`
 - 恢复本地 TX/RX loopback bring-up 模式：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/set_qpsk_rx_board_mode.tcl -tclargs loopback`
+- 切到本地 PRBS TX/RX loopback 压力测试模式：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/set_qpsk_rx_board_mode.tcl -tclargs loopback_prbs`
 - 生成 external RX 上板 bitstream（自动切 `FIXED_TX_EN=0/FIXED_RX_EN=1` 并复制 `.bit/.ltx` 到 `artifacts/external_rx/`）：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_external_rx_bitstream.tcl`
+  - 可追加 `-tclargs loopback` 或 `-tclargs loopback_prbs` 生成对应本地回环镜像，产物分别输出到 `artifacts/loopback/` 或 `artifacts/loopback_prbs/`。
 - 烧录 external RX 上板 bitstream 并绑定 ILA probes：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_external_rx_bitstream.tcl`
 - 列出 Hardware Manager 可见的 JTAG target/device/ILA（上板前预检）：

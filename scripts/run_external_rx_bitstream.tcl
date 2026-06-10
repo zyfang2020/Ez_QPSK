@@ -14,6 +14,7 @@
 # Modes:
 #   external_rx : TX disabled, RX enabled. Use with an external QPSK source.
 #   loopback    : TX enabled, RX enabled. Use for local DAC-to-ADC bring-up.
+#   loopback_prbs : TX enabled with PRBS7 QPSK symbols, RX enabled.
 
 set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir ".."]]
@@ -33,13 +34,20 @@ switch -- $mode {
     external_rx {
         set fixed_tx_en 0
         set fixed_rx_en 1
+        set fixed_qpsk_mode_sel 0
     }
     loopback {
         set fixed_tx_en 1
         set fixed_rx_en 1
+        set fixed_qpsk_mode_sel 0
+    }
+    loopback_prbs {
+        set fixed_tx_en 1
+        set fixed_rx_en 1
+        set fixed_qpsk_mode_sel 1
     }
     default {
-        puts "ERROR: unknown mode '$mode'. Expected external_rx or loopback."
+        puts "ERROR: unknown mode '$mode'. Expected external_rx, loopback, or loopback_prbs."
         exit 1
     }
 }
@@ -199,7 +207,7 @@ if {[llength $cell_obj] == 0} {
 }
 
 set cell_props [list_property $cell_obj]
-foreach prop {CONFIG.FIXED_TX_EN CONFIG.FIXED_RX_EN} {
+foreach prop {CONFIG.FIXED_TX_EN CONFIG.FIXED_RX_EN CONFIG.FIXED_QPSK_MODE_SEL} {
     if {[lsearch -exact $cell_props $prop] < 0} {
         puts "ERROR: $cell_name does not expose $prop. Refresh the module reference first."
         close_project
@@ -210,6 +218,7 @@ foreach prop {CONFIG.FIXED_TX_EN CONFIG.FIXED_RX_EN} {
 set_property -dict [list \
     CONFIG.FIXED_TX_EN $fixed_tx_en \
     CONFIG.FIXED_RX_EN $fixed_rx_en \
+    CONFIG.FIXED_QPSK_MODE_SEL $fixed_qpsk_mode_sel \
 ] $cell_obj
 
 if {[catch {ensure_demod_ila_probe $cell_name $ila_name $demod_dbg_bus_w} ila_msg]} {

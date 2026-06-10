@@ -94,7 +94,7 @@ For future automated work, run Vivado batch commands with escalation if the same
 
 - Run this after programming PL, or run an equivalent FSBL/application flow, before trying to refresh Vivado ILA/debug hub. If PS `FCLK_CLK0` is not active, Vivado can program the FPGA but may report that the design has no supported debug core or that `dbg_hub` is not detected.
 - After a PL milestone that affects the exported hardware, refresh the PS-side hardware platform:
-  1. Set the intended board mode. For local analog loopback, use `loopback` (`FIXED_TX_EN=1`, `FIXED_RX_EN=1`). For a purely external ADC source, use `external_rx` (`FIXED_TX_EN=0`, `FIXED_RX_EN=1`).
+  1. Set the intended board mode. For local analog loopback, use `loopback` (`FIXED_TX_EN=1`, `FIXED_RX_EN=1`, Gray TX). For local PRBS stress testing, use `loopback_prbs` (`FIXED_TX_EN=1`, `FIXED_RX_EN=1`, PRBS7 TX). For a purely external ADC source, use `external_rx` (`FIXED_TX_EN=0`, `FIXED_RX_EN=1`).
   2. Generate the matching bitstream when the PL image changed.
   3. Export/update XSA with `scripts/export_current_xsa.tcl`; use `-include-bit` only after the matching implementation bitstream is available.
   4. Rebuild or refresh the Vitis platform/application from that XSA.
@@ -113,6 +113,7 @@ For future automated work, run Vivado batch commands with escalation if the same
 - For the next hardware validation step, prefer local analog loopback first:
   `PL TX -> DAC -> external filter/analog path -> ADC -> PL RX demod`.
 - This requires both DA and AD paths to be working and uses `loopback` mode with TX and RX enabled.
+- Use `loopback_prbs` only as a random-symbol stress/activity mode for now. Current hardware evidence shows good ADC/DAC/IQ/symbol activity, but `rx_demod_lock` does not assert on PRBS yet.
 - After local analog loopback is stable, switch to `external_rx` mode for a separate external QPSK transmitter feeding the ADC.
 
 Hardware result on 2026-06-10:
@@ -127,6 +128,9 @@ Hardware result on 2026-06-10:
   - `valid_count=20`
   - Gray-cycle best match ratio `1`
   - `adc_raw_span=794`
+- `scripts/run_external_rx_bitstream.tcl -tclargs loopback_prbs` generated `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.bit` and `.ltx`.
+- `loopback_prbs` implementation passed timing with setup slack `0.150 ns` and hold slack `0.060 ns`.
+- PRBS board capture `Tool/data/local_prbs_loopback_ila_00..02.csv` showed ADC span about `886..971`, symbol entropy about `1.87..1.95` bits, and active hard decisions across all symbols, but `lock_ratio=0`. Treat this as useful random-symbol activity evidence, not a demod-lock PASS.
 
 ## Simulation Status
 
