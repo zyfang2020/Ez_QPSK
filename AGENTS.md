@@ -113,7 +113,7 @@ For future automated work, run Vivado batch commands with escalation if the same
 - For the next hardware validation step, prefer local analog loopback first:
   `PL TX -> DAC -> external filter/analog path -> ADC -> PL RX demod`.
 - This requires both DA and AD paths to be working and uses `loopback` mode with TX and RX enabled.
-- Use `loopback_prbs` only as a random-symbol stress/activity mode for now. Current hardware evidence shows good ADC/DAC/IQ/symbol activity, but `rx_demod_lock` does not assert on PRBS yet.
+- Use `loopback_prbs` as the preferred random-symbol stress mode after Gray loopback. Current hardware evidence shows stable PRBS lock on the local analog path.
 - After local analog loopback is stable, switch to `external_rx` mode for a separate external QPSK transmitter feeding the ADC.
 
 Hardware result on 2026-06-10:
@@ -130,7 +130,18 @@ Hardware result on 2026-06-10:
   - `adc_raw_span=794`
 - `scripts/run_external_rx_bitstream.tcl -tclargs loopback_prbs` generated `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.bit` and `.ltx`.
 - `loopback_prbs` implementation passed timing with setup slack `0.150 ns` and hold slack `0.060 ns`.
-- PRBS board capture `Tool/data/local_prbs_loopback_ila_00..02.csv` showed ADC span about `886..971`, symbol entropy about `1.87..1.95` bits, and active hard decisions across all symbols, but `lock_ratio=0`. Treat this as useful random-symbol activity evidence, not a demod-lock PASS.
+- Early PRBS board capture `Tool/data/local_prbs_loopback_ila_00..02.csv` showed ADC span about `886..971`, symbol entropy about `1.87..1.95` bits, and active hard decisions across all symbols, but `lock_ratio=0`; this was useful activity evidence before blind-lock tuning.
+- After blind-lock tuning and powering the ADC rail, `loopback_prbs` was rebuilt:
+  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.bit`
+  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.ltx`
+  - implementation timing passed with setup slack `0.297 ns` and hold slack `0.041 ns`
+- Board captures `Tool/data/local_prbs_loopback_after_adc_power_ila_00..02.csv` decoded with `--check-external-rx` all passed:
+  - `lock_ratio=1`
+  - `lock_score=255`
+  - `valid_count=20/20/21`
+  - symbol entropy `1.88/1.95/1.88` bits
+  - `adc_raw_span=907/892/909`
+  - Gray-cycle match ratio stayed low (`0.40/0.40/0.43`), as expected for PRBS rather than the fixed Gray cycle
 
 ## Simulation Status
 
@@ -143,6 +154,21 @@ Hardware result on 2026-06-10:
 - Verified command completed with `[TB_QPSK_TX_DAC][PASS]` at beat 50000.
 
 Remaining note: the RTL modules still emit XSim timescale warnings because several source files do not declare a timescale. This is noisy but did not block the repaired simulation.
+
+Stage-2 RX demod status on 2026-06-10:
+
+- Random PRBS external-like simulation passed for `+15 kHz` residual carrier offset:
+  - `scripts/run_qpsk_rx_demod_random_external_sim.tcl`
+  - lock near `nco_corr=2560`, final `nco_corr=2544`
+  - `locked_symbols=360`
+- Random PRBS external-like simulation passed for `-15 kHz` residual carrier offset:
+  - `scripts/run_qpsk_rx_demod_random_external_neg_sim.tcl`
+  - lock/final `nco_corr=-2560`
+  - `locked_symbols=360`
+- Gray local loopback regression still passed:
+  - `scripts/run_qpsk_rx_demod_loopback_sim.tcl`
+  - `locked_symbols=160`
+- The current blind-lock logic is intentionally conservative: it waits longer before blind acquisition, scans coarse NCO correction candidates, suppresses blind score accumulation immediately after phase-bin movement, and avoids first-round lock on small coarse-frequency candidates. This prevents early false lock in random/PRBS tests while preserving the known Gray-cycle path.
 
 ## Suggested Goal-Mode Execution Plan
 

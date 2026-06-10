@@ -48,6 +48,11 @@
 7. `tb_rx_chain_min.v`：确认 RX 链路数据连续性和固定包长 `tlast` 节奏。
 8. `tb_pl_comm_top_fixed_cfg_loopback.v`：确认顶层固定配置下 AXIS 数据、`tkeep`、`tlast` 和回压保持行为正确。
 
+最近验证：
+
+- 2026-06-10：`run_qpsk_rx_demod_random_external_sim.tcl` 和 `run_qpsk_rx_demod_random_external_neg_sim.tcl` 均通过，覆盖 PRBS QPSK、`+15 kHz/-15 kHz` 残余载波偏差、慢幅度/DC 漂移、噪声和独立符号率漂移。
+- 2026-06-10：`run_qpsk_rx_demod_loopback_sim.tcl` 回归通过，确认本地 Gray loopback 未受 PRBS 盲锁调参影响。
+
 ## 后处理
 
 单 DAC 仿真导出的 CSV 可用：
