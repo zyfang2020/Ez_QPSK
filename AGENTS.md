@@ -153,6 +153,17 @@ Hardware result on 2026-06-10:
   - `valid_count=20/21/20`
   - `symbol_entropy_when_valid_bits=1.97095/1.9699/1.95272`
   - `adc_raw_span=948/909/948`
+- Post acquisition transition-gating `loopback_prbs` rebuild on 2026-06-11 also passed implementation timing with setup slack `0.151 ns` and hold slack `0.052 ns`, and refreshed:
+  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.bit`
+  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.ltx`
+- Post-fix local analog PRBS board captures also passed:
+  - `Tool/data/local_prbs_loopback_post_fix_ila_00..02.csv`
+  - `--check-external-rx` PASS for all three captures
+  - `lock_ratio=1`, `lock_score=255`
+  - `valid_count=21/20/21`
+  - `symbol_entropy_when_valid_bits=1.88417/1.98548/1.93871`
+  - `adc_raw_span=964/1000/976`
+  - ADC amplitude is close to full scale; if later captures show clipping, reduce analog gain before evaluating demod failures.
 - `scripts/run_external_rx_bitstream.tcl -tclargs external_rx` generated `artifacts/external_rx/Ez_QPSK_external_rx.bit` and `.ltx`.
 - `external_rx` implementation passed timing with setup slack `0.007 ns` and hold slack `0.048 ns`; setup is positive but very tight, so later carrier/timing-loop additions need timing attention.
 - `scripts/export_current_xsa.tcl -tclargs -include-bit -out artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa` exported an XSA carrying the matching external-RX bitstream.
