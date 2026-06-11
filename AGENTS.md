@@ -251,6 +251,10 @@ Stage-2 RX demod status on 2026-06-10/11:
   - `+35 kHz`: `locked_symbols=360`, `valid_symbols=9847`, final `nco_corr=6007`
   - `scripts/run_qpsk_rx_demod_random_external_wide_neg_sim.tcl`
   - `-35 kHz`: `locked_symbols=360`, `valid_symbols=9628`, final `nco_corr=-5768`
+- Latest post-lock carrier-drift random PRBS simulation passed:
+  - `scripts/run_qpsk_rx_demod_random_external_drift_sim.tcl`
+  - residual carrier drifts from `+15 kHz` to `+35 kHz` after lock
+  - `locked_symbols=3200`, `valid_symbols=12589`, final `nco_corr=5715`
 - Latest standard random PRBS simulations passed with lock-settle checker hardening:
   - `scripts/run_qpsk_rx_demod_random_external_sim.tcl`
   - `+15 kHz`: `locked_symbols=360`, `valid_symbols=9749`, final `nco_corr=2552`
@@ -262,7 +266,7 @@ Stage-2 RX demod status on 2026-06-10/11:
   - `scripts/run_pl_comm_top_external_rx_neg_sim.tcl`
   - `-15 kHz`: `locked_symbols=260`, `valid_symbols=9807`, final `nco_corr=-2307`
 - The current blind-lock logic is intentionally conservative: it waits longer before blind acquisition, scans coarse NCO correction candidates, suppresses blind score accumulation immediately after phase-bin movement, avoids first-round lock on small coarse-frequency candidates, scores acquisition candidates by transition quality rather than raw transition count, and uses a stricter post-scan fine-quality path before blind lock. This prevents the observed early false lock in random/PRBS tests while preserving the known Gray-cycle path.
-- Open carrier-recovery note: the latest fixed-frequency positive/negative PRBS simulations now include lock-after Costas-like PI NCO fine trim and pass the `±35 kHz` simulation stress case, but this is still not a full Costas/Gardner synchronizer. A future non-data-aided or stronger lock-before frequency estimator plus stronger timing recovery should replace the current coarse acquisition path before claiming broad arbitrary external-transmitter tolerance.
+- Open carrier-recovery note: the latest fixed-frequency positive/negative PRBS simulations now include lock-after Costas-like PI NCO fine trim and pass the `±35 kHz` plus post-lock `+15 kHz -> +35 kHz` drift simulation stress cases, but this is still not a full Costas/Gardner synchronizer. A future non-data-aided or stronger lock-before frequency estimator plus stronger timing recovery should replace the current coarse acquisition path before claiming broad arbitrary external-transmitter tolerance.
 
 ## Suggested Goal-Mode Execution Plan
 
