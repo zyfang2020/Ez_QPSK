@@ -172,6 +172,19 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mo
 powershell -ExecutionPolicy Bypass -File scripts/wait_external_rx_signal.ps1 -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5
 ```
 
+- A two-board orchestration helper is available after TX/RX JTAG targets are
+  mapped. It refuses to run programming/checks without explicit target
+  selectors, which helps avoid swapping the original-interface TX and
+  new-interface RX boards:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1 -DryRun -TxTarget <tx_hw_target> -RxTarget <rx_hw_target> -TxPsTarget <tx_xsct_target> -RxPsTarget <rx_xsct_target> -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5
+```
+
+  Remove `-DryRun` only after the target mapping has been verified. Without
+  `-RunFullCheck`, the helper runs only the new-interface RX `-SignalOnly`
+  ADC activity preflight.
+
 - The board check writes per-capture `*_summary.json` files and a multi-capture aggregate JSON. Full checks default to `Tool/data/<mode>_board_check_aggregate_summary.json`; `-SignalOnly` checks default to `Tool/data/<mode>_signal_check_aggregate_summary.json`; override with `-AggregateSummaryJson`.
 - Decoder summaries now include machine-readable `adc_input_state` and `rx_demod_state`. Current useful values include `too_small` / `waiting_for_adc_input` for missing external input and `active` / `locked` for a healthy demod capture. Aggregate JSON includes `adc_input_state_counts` and `rx_demod_state_counts`.
 - The decoder and board check now include coarse ADC spectral diagnostics. Defaults are centered at `7 MHz` with `4 MHz` width; override with Python `--adc-band-center-hz/--adc-band-width-hz` or PowerShell `-AdcBandCenterHz/-AdcBandWidthHz`.

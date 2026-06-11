@@ -229,6 +229,10 @@
   - 脚本会为每份 CSV 写 `*_summary.json`，完整检查默认写 `Tool\data\<mode>_board_check_aggregate_summary.json`，`-SignalOnly` 默认写 `Tool\data\<mode>_signal_check_aggregate_summary.json`，聚合显示多次抓取的 lock ratio、valid ratio、ADC span、ADC 频谱峰值、7 MHz 附近带内能量占比、I/Q RMS 和 locked NCO correction 的 min/avg/max。可用 `-AggregateSummaryJson path\to\summary.json` 改输出位置。
   - 摘要中的 `adc_input_state` / `rx_demod_state` 可快速区分物理输入问题和解调锁定问题；当前 external 空输入表现为 `too_small` / `waiting_for_adc_input`。
   - ADC 频谱粗估默认关注 `7 MHz ±2 MHz`；若外部源频点不同，可追加 `-AdcBandCenterHz` / `-AdcBandWidthHz` 调整聚合诊断带宽；若要把频谱也纳入 PASS/FAIL，可追加例如 `-MinAdcAcRms 100 -MinAdcBandPowerRatio 0.8 -MinAdcPeakHz 6000000 -MaxAdcPeakHz 8000000`。
+- 两板链路编排入口，要求显式传入 TX/RX JTAG target，默认只做新接口 RX `SignalOnly` 预检；加 `-RunFullCheck` 后会先等信号出现再跑完整 demod 检查：
+  - 枚举目标命令预览：`powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1 -DryRun -ListTargets`
+  - 完整流程 dry-run：`powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1 -DryRun -TxTarget <tx_hw_target> -RxTarget <rx_hw_target> -TxPsTarget <tx_xsct_target> -RxPsTarget <rx_xsct_target> -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5`
+  - 确认 target 映射后去掉 `-DryRun` 才会依次烧录原接口 TX、新接口 RX，初始化两边 PS/FCLK，并在 RX 板抓 ILA 检查。
 - 解码 Vivado Hardware Manager 导出的 external RX ILA CSV：
   - `python Tool/python/decode_rx_demod_ila.py path\to\ila_export.csv --decoded-csv Tool\data\rx_demod_ila_decoded.csv --summary-json Tool\data\rx_demod_ila_summary.json`
   - 解码摘要会把 `nco_freq_corr` 按默认 `100 MHz / 24-bit` NCO 换算为 Hz，并给出 ADC 动态范围、ADC 频谱粗估与简单诊断提示；可追加 `--expect-nco-sign positive|negative|nonzero`、`--min-nco-abs`、`--max-nco-abs` 做外部源频偏门槛检查，也可用 `--adc-band-center-hz` / `--adc-band-width-hz` 改频谱诊断带宽，用 `--min-adc-ac-rms`、`--min-adc-band-power-ratio`、`--min-adc-peak-hz`、`--max-adc-peak-hz` 加频谱门槛。
