@@ -199,6 +199,7 @@
   - 本地随机模拟回环 smoke 可用：`powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode loopback_prbs`
   - 若外部源相对本地 `7 MHz` NCO 有已知正/负残余频偏，可追加例如 `-ExpectNcoSign positive -MinNcoAbs 96 -MaxNcoAbs 8192`；本地同钟回环的 NCO correction 可能为 0，不建议默认加这个约束。
   - 脚本会为每份 CSV 写 `*_summary.json`，完整检查默认写 `Tool\data\<mode>_board_check_aggregate_summary.json`，`-SignalOnly` 默认写 `Tool\data\<mode>_signal_check_aggregate_summary.json`，聚合显示多次抓取的 lock ratio、valid ratio、ADC span、ADC 频谱峰值、7 MHz 附近带内能量占比、I/Q RMS 和 locked NCO correction 的 min/avg/max。可用 `-AggregateSummaryJson path\to\summary.json` 改输出位置。
+  - 摘要中的 `adc_input_state` / `rx_demod_state` 可快速区分物理输入问题和解调锁定问题；当前 external 空输入表现为 `too_small` / `waiting_for_adc_input`。
   - ADC 频谱粗估默认关注 `7 MHz ±2 MHz`；若外部源频点不同，可追加 `-AdcBandCenterHz` / `-AdcBandWidthHz` 调整聚合诊断带宽；若要把频谱也纳入 PASS/FAIL，可追加例如 `-MinAdcAcRms 100 -MinAdcBandPowerRatio 0.8 -MinAdcPeakHz 6000000 -MaxAdcPeakHz 8000000`。
 - 解码 Vivado Hardware Manager 导出的 external RX ILA CSV：
   - `python Tool/python/decode_rx_demod_ila.py path\to\ila_export.csv --decoded-csv Tool\data\rx_demod_ila_decoded.csv --summary-json Tool\data\rx_demod_ila_summary.json`

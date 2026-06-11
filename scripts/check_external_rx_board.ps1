@@ -123,6 +123,23 @@ function Numeric-Stats {
     }
 }
 
+function String-Counts {
+    param([object[]]$Values)
+    $counts = [ordered]@{}
+    foreach ($value in $Values) {
+        if ($null -eq $value) {
+            continue
+        }
+        $key = [string]$value
+        if ($counts.Contains($key)) {
+            $counts[$key] = $counts[$key] + 1
+        } else {
+            $counts[$key] = 1
+        }
+    }
+    return $counts
+}
+
 function Get-JsonProperty {
     param(
         [object]$Item,
@@ -351,10 +368,14 @@ if ($Summaries.Count -gt 0) {
         adc_spectrum_band_peak_hz = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "adc_spectrum_band_peak_hz" })
         nco_freq_corr_last_when_locked = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "nco_freq_corr_last_when_locked" })
         nco_freq_corr_last_when_locked_hz = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "nco_freq_corr_last_when_locked_hz" })
+        adc_input_state_counts = String-Counts @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "adc_input_state" })
+        rx_demod_state_counts = String-Counts @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "rx_demod_state" })
         captures_detail = @($Summaries | ForEach-Object {
             [ordered]@{
                 csv = $_.csv
                 passed = $_.passed
+                adc_input_state = Get-JsonProperty $_.summary "adc_input_state"
+                rx_demod_state = Get-JsonProperty $_.summary "rx_demod_state"
                 lock_ratio = Get-JsonProperty $_.summary "lock_ratio"
                 valid_ratio = Get-JsonProperty $_.summary "valid_ratio"
                 adc_raw_span = Get-JsonProperty $_.summary "adc_raw_span"

@@ -19,6 +19,8 @@ DEFAULT_PHASE_WIDTH = 24
 DEFAULT_FREQ_CORR_LIMIT = 8192
 DEFAULT_ADC_BAND_CENTER_HZ = 7_000_000.0
 DEFAULT_ADC_BAND_WIDTH_HZ = 4_000_000.0
+ADC_INPUT_PRESENT_SPAN = 16
+ADC_INPUT_BAND_RATIO_HINT = 0.08
 
 
 def sign_extend(value: int, width: int) -> int:
@@ -391,6 +393,24 @@ def make_hints(
     return hints
 
 
+def adc_input_state(adc_span: int, adc_band_power_ratio: float) -> str:
+    if adc_span < ADC_INPUT_PRESENT_SPAN:
+        return "too_small"
+    if adc_span > 950:
+        return "near_full_scale"
+    if adc_band_power_ratio < ADC_INPUT_BAND_RATIO_HINT:
+        return "active_outside_expected_band"
+    return "active"
+
+
+def rx_demod_state(lock_ratio: float, adc_state: str) -> str:
+    if lock_ratio >= 0.50:
+        return "locked"
+    if adc_state == "too_small":
+        return "waiting_for_adc_input"
+    return "unlocked"
+
+
 def summarize(
     items: list[dict[str, int]],
     unknown_count: int,
@@ -437,6 +457,10 @@ def summarize(
     )
     lock_ratio = lock_count / len(items)
     valid_ratio = valid_count / len(items)
+    adc_state = adc_input_state(
+        adc_span,
+        float(adc_spectrum["adc_spectrum_band_power_ratio"]),
+    )
 
     return {
         "samples": len(items),
@@ -482,6 +506,9 @@ def summarize(
         "adc_raw_max": max(adc_raw),
         "adc_raw_mean": statistics.fmean(adc_raw),
         "adc_raw_span": adc_span,
+        "adc_input_present": adc_span >= ADC_INPUT_PRESENT_SPAN,
+        "adc_input_state": adc_state,
+        "rx_demod_state": rx_demod_state(lock_ratio, adc_state),
         **adc_spectrum,
         "locked_sample_count": len(locked),
         "hints": make_hints(

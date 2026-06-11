@@ -123,6 +123,7 @@ powershell -ExecutionPolicy Bypass -File scripts/wait_external_rx_signal.ps1 -Ru
 ```
 
 - The board check writes per-capture `*_summary.json` files and a multi-capture aggregate JSON. Full checks default to `Tool/data/<mode>_board_check_aggregate_summary.json`; `-SignalOnly` checks default to `Tool/data/<mode>_signal_check_aggregate_summary.json`; override with `-AggregateSummaryJson`.
+- Decoder summaries now include machine-readable `adc_input_state` and `rx_demod_state`. Current useful values include `too_small` / `waiting_for_adc_input` for missing external input and `active` / `locked` for a healthy demod capture. Aggregate JSON includes `adc_input_state_counts` and `rx_demod_state_counts`.
 - The decoder and board check now include coarse ADC spectral diagnostics. Defaults are centered at `7 MHz` with `4 MHz` width; override with Python `--adc-band-center-hz/--adc-band-width-hz` or PowerShell `-AdcBandCenterHz/-AdcBandWidthHz`.
 - Optional ADC spectral gates are available for real external-source checks:
   - PowerShell: `-MinAdcAcRms <lsb> -MinAdcBandPowerRatio <ratio> -MinAdcPeakHz <hz> -MaxAdcPeakHz <hz>`
@@ -241,6 +242,11 @@ Hardware result on 2026-06-10:
   - `-DryRun -MaxAttempts 1 -RunFullCheck` prints the expected signal-only then full-check commands without capturing hardware
   - existing external noise CSV fails the wait at signal preflight
   - existing loopback PRBS CSV passes signal preflight and, with `-RunFullCheck`, passes the full demod check
+- Latest current-board `wait_external_rx_signal.ps1 -MaxAttempts 1 -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5` still fails at signal preflight:
+  - `Tool/data/external_rx_signal_check.csv`
+  - `adc_input_state=too_small`, `rx_demod_state=waiting_for_adc_input`
+  - `adc_raw_span=2`, `adc_ac_rms=0.53643`, `adc_spectrum_band_power_ratio=0.0777216`
+  - no full demod check was run, because ADC input presence did not pass
 - `scripts/init_ps7_fclk.tcl` reported no APU/Cortex-A9 target during this run (`AHB AP transaction error`), but Vivado still captured ILA successfully, so the active FCLK/debug path was sufficient for the capture. If this repeats after a board reset, check PS power/reset/boot mode before relying on XSCT PS initialization.
 
 ## Simulation Status
