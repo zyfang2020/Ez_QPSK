@@ -10,6 +10,13 @@
 // -----------------------------------------------------------------------------
 module tb_pl_comm_top_external_rx;
 
+`ifdef QPSK_TOP_EXT_RX_DRIFT_NEG
+`define QPSK_TOP_EXT_RX_DRIFT_ENABLED
+`endif
+`ifdef QPSK_TOP_EXT_RX_DRIFT
+`define QPSK_TOP_EXT_RX_DRIFT_ENABLED
+`endif
+
 localparam integer ADC_DW = 10;
 localparam integer DAC_DW = 12;
 localparam integer RX_DW = 16;
@@ -21,8 +28,14 @@ localparam integer SYMBOL_MASK = MAX_SYMBOLS - 1;
 localparam integer CAL_SYMS = 32;
 localparam integer SEARCH_WIN = 6;
 localparam integer LOCK_SETTLE_SYMS = 64;
+`ifdef QPSK_TOP_EXT_RX_DRIFT_ENABLED
+localparam integer TARGET_LOCKED_SYMS = 3200;
+`else
 localparam integer TARGET_LOCKED_SYMS = 260;
-`ifdef QPSK_TOP_EXT_RX_WIDE
+`endif
+`ifdef QPSK_TOP_EXT_RX_DRIFT_ENABLED
+localparam integer MIN_NCO_CORR = 4500;
+`elsif QPSK_TOP_EXT_RX_WIDE
 localparam integer MIN_NCO_CORR = 4500;
 `elsif QPSK_TOP_EXT_RX_WIDE_NEG
 localparam integer MIN_NCO_CORR = 4500;
@@ -32,7 +45,13 @@ localparam integer MIN_NCO_CORR = 96;
 
 localparam real FS_HZ = 100000000.0;
 localparam real CARRIER_HZ = 7000000.0;
-`ifdef QPSK_TOP_EXT_RX_WIDE_NEG
+`ifdef QPSK_TOP_EXT_RX_DRIFT_NEG
+localparam real CARRIER_OFFSET_HZ = -15000.0;
+localparam integer EXPECT_NCO_SIGN = -1;
+`elsif QPSK_TOP_EXT_RX_DRIFT
+localparam real CARRIER_OFFSET_HZ = 15000.0;
+localparam integer EXPECT_NCO_SIGN = 1;
+`elsif QPSK_TOP_EXT_RX_WIDE_NEG
 localparam real CARRIER_OFFSET_HZ = -35000.0;
 localparam integer EXPECT_NCO_SIGN = -1;
 `elsif QPSK_TOP_EXT_RX_WIDE
@@ -55,6 +74,15 @@ localparam integer ADC_NOISE_SPAN = 8;
 localparam real SYMBOL_PHASE_OFFSET = 0.22;
 localparam real PI = 3.14159265358979323846;
 localparam real PHASE_STEP_RAD = 2.0 * PI * (CARRIER_HZ + CARRIER_OFFSET_HZ) / FS_HZ;
+`ifdef QPSK_TOP_EXT_RX_DRIFT_NEG
+localparam real CARRIER_OFFSET_FINAL_HZ = -35000.0;
+localparam integer CARRIER_DRIFT_START_SAMPLE = 500000;
+localparam integer CARRIER_DRIFT_SAMPLES = 80000;
+`elsif QPSK_TOP_EXT_RX_DRIFT
+localparam real CARRIER_OFFSET_FINAL_HZ = 35000.0;
+localparam integer CARRIER_DRIFT_START_SAMPLE = 500000;
+localparam integer CARRIER_DRIFT_SAMPLES = 80000;
+`endif
 localparam real PHASE_OFFSET_RAD = PI * PHASE_OFFSET_DEG / 180.0;
 localparam real SYMBOL_STEP = TX_SYMBOL_RATE_HZ / FS_HZ;
 
@@ -108,10 +136,15 @@ reg [15:0] lfsr;
 reg [15:0] noise_lfsr;
 reg locked_seen;
 reg calibrated;
+reg drift_started_seen;
+reg drift_done_seen;
 reg [1:0] tx_sym;
 reg [1:0] expected_sym;
 real tx_phase;
 real tx_symbol_phase;
+real tx_phase_step;
+real carrier_offset_now;
+real drift_frac;
 real sym_i;
 real sym_q;
 real rf_sample;
@@ -279,7 +312,12 @@ always @(posedge clk_adc or negedge rst_n) begin
         tx_sym_idx <= 0;
         tx_phase = PHASE_OFFSET_RAD;
         tx_symbol_phase = SYMBOL_PHASE_OFFSET;
+        tx_phase_step = PHASE_STEP_RAD;
+        carrier_offset_now = CARRIER_OFFSET_HZ;
+        drift_frac = 0.0;
         noise_lfsr <= 16'h1D0F;
+        drift_started_seen <= 1'b0;
+        drift_done_seen <= 1'b0;
         amp_phase = 0.0;
         dc_phase = 0.0;
     end else begin
@@ -298,7 +336,33 @@ always @(posedge clk_adc or negedge rst_n) begin
                     (amp_now * rf_sample)) + noise_sample;
         adc_data <= clip_adc(quantized);
 
+`ifdef QPSK_TOP_EXT_RX_DRIFT_ENABLED
+        if (sample_count < CARRIER_DRIFT_START_SAMPLE) begin
+            carrier_offset_now = CARRIER_OFFSET_HZ;
+        end else if (sample_count < (CARRIER_DRIFT_START_SAMPLE + CARRIER_DRIFT_SAMPLES)) begin
+            if (!drift_started_seen) begin
+                drift_started_seen <= 1'b1;
+                $display("[TB_TOP_EXT_RX][INFO] %0t ns: carrier drift start, offset_hz=%0f",
+                         $time, CARRIER_OFFSET_HZ);
+            end
+            drift_frac = 1.0 * (sample_count - CARRIER_DRIFT_START_SAMPLE) /
+                         CARRIER_DRIFT_SAMPLES;
+            carrier_offset_now = CARRIER_OFFSET_HZ +
+                                 ((CARRIER_OFFSET_FINAL_HZ - CARRIER_OFFSET_HZ) *
+                                  drift_frac);
+        end else begin
+            if (!drift_done_seen) begin
+                drift_done_seen <= 1'b1;
+                $display("[TB_TOP_EXT_RX][INFO] %0t ns: carrier drift done, offset_hz=%0f",
+                         $time, CARRIER_OFFSET_FINAL_HZ);
+            end
+            carrier_offset_now = CARRIER_OFFSET_FINAL_HZ;
+        end
+        tx_phase_step = 2.0 * PI * (CARRIER_HZ + carrier_offset_now) / FS_HZ;
+        tx_phase = tx_phase + tx_phase_step;
+`else
         tx_phase = tx_phase + PHASE_STEP_RAD;
+`endif
         if (tx_phase > (2.0 * PI)) begin
             tx_phase = tx_phase - (2.0 * PI);
         end
@@ -398,6 +462,11 @@ always @(posedge clk_adc or negedge rst_n) begin
                     locked_cnt <= locked_cnt + 1;
 
                     if (locked_cnt >= TARGET_LOCKED_SYMS) begin
+`ifdef QPSK_TOP_EXT_RX_DRIFT_ENABLED
+                        if (!drift_done_seen) begin
+                            tb_fail("ERR_CARRIER_DRIFT_NOT_COMPLETED");
+                        end
+`endif
                         if (abs_integer(u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.nco_freq_corr) < MIN_NCO_CORR) begin
                             tb_fail("ERR_NCO_FREQ_TRACK_NOT_ACTIVE");
                         end
@@ -456,7 +525,11 @@ initial begin
 end
 
 initial begin
-`ifdef QPSK_TOP_EXT_RX_WIDE
+`ifdef QPSK_TOP_EXT_RX_DRIFT_NEG
+    #9000000;
+`elsif QPSK_TOP_EXT_RX_DRIFT
+    #9000000;
+`elsif QPSK_TOP_EXT_RX_WIDE
     #12000000;
 `elsif QPSK_TOP_EXT_RX_WIDE_NEG
     #12000000;
@@ -467,3 +540,7 @@ initial begin
 end
 
 endmodule
+
+`ifdef QPSK_TOP_EXT_RX_DRIFT_ENABLED
+`undef QPSK_TOP_EXT_RX_DRIFT_ENABLED
+`endif

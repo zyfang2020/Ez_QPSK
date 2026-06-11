@@ -282,6 +282,13 @@ Stage-2 RX demod status on 2026-06-10/11:
   - `+35 kHz`: `locked_symbols=260`, `valid_symbols=9557`, final `nco_corr=5773`
   - `scripts/run_pl_comm_top_external_rx_wide_neg_sim.tcl`
   - `-35 kHz`: `locked_symbols=260`, `valid_symbols=9491`, final `nco_corr=-5767`
+- Latest top-level external-RX post-lock carrier-drift simulations passed:
+  - `scripts/run_pl_comm_top_external_rx_drift_sim.tcl`
+  - residual carrier drifts from `+15 kHz` to `+35 kHz` after lock
+  - `locked_symbols=3200`, `valid_symbols=12353`, final `nco_corr=5708`
+  - `scripts/run_pl_comm_top_external_rx_drift_neg_sim.tcl`
+  - residual carrier drifts from `-15 kHz` to `-35 kHz` after lock
+  - `locked_symbols=3200`, `valid_symbols=12747`, final `nco_corr=-5803`
 - The current blind-lock logic is intentionally conservative: it waits longer before blind acquisition, scans coarse NCO correction candidates, suppresses blind score accumulation immediately after phase-bin movement, avoids first-round lock on small coarse-frequency candidates, scores acquisition candidates by transition quality rather than raw transition count, and uses a stricter post-scan fine-quality path before blind lock. This prevents the observed early false lock in random/PRBS tests while preserving the known Gray-cycle path.
 - Open carrier-recovery note: the latest fixed-frequency positive/negative PRBS simulations now include lock-after Costas-like PI NCO fine trim and pass the `±35 kHz` plus post-lock `+15 kHz -> +35 kHz` / `-15 kHz -> -35 kHz` drift simulation stress cases, but this is still not a full Costas/Gardner synchronizer. A future non-data-aided or stronger lock-before frequency estimator plus stronger timing recovery should replace the current coarse acquisition path before claiming broad arbitrary external-transmitter tolerance.
 

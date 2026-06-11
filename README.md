@@ -31,7 +31,7 @@
 - 已完成：新增锁后载波漂移回归，输入在已锁后分别从 `+15 kHz -> +35 kHz`、`-15 kHz -> -35 kHz` 漂移，RX 保持符号恢复并把 NCO correction 跟踪到对应频偏方向。
 - 已完成：导出 `rx_demod_bit/rx_demod_lock` 到 J11 debug 管脚，便于真实外部输入上板时直接观测判决位与锁定状态。
 - 已完成：新增外部 RX 上板模式脚本，可在不重画 BD 的情况下把固定配置切到 `FIXED_TX_EN=0/FIXED_RX_EN=1`，用于外部 QPSK 信号灌 ADC 时关闭本地 DAC 发射。
-- 已完成：新增顶层 external RX 正/负频偏仿真，验证 `pl_comm_top_fixed_cfg` 在 TX 关闭时 DAC 保持回零，外部 PRBS QPSK ADC 激励可经顶层 RX demod 盲锁恢复，并且 J11 debug 输出与内部 lock/bit 一致；顶层 external-RX 宽频偏 `+35 kHz/-35 kHz` 也已通过。
+- 已完成：新增顶层 external RX 正/负频偏仿真，验证 `pl_comm_top_fixed_cfg` 在 TX 关闭时 DAC 保持回零，外部 PRBS QPSK ADC 激励可经顶层 RX demod 盲锁恢复，并且 J11 debug 输出与内部 lock/bit 一致；顶层 external-RX 宽频偏 `+35 kHz/-35 kHz` 和锁后 `+15 kHz -> +35 kHz` / `-15 kHz -> -35 kHz` 漂移回归也已通过。
 - 已完成：新增并验证 external RX bitstream batch 构建，产物输出到 `artifacts/external_rx/`；最新宽扫候选评分 RTL 版 route/write_bitstream 通过，setup slack `0.219 ns`、hold slack `0.042 ns`，`.ltx` 已包含 ILA `probe2` 的 `rx_demod_dbg_bus[95:0]`。
 - 已完成：新增 external RX ILA 抓取脚本，可连接 Hardware Manager、可选烧录 external RX bitstream，并把 ILA 数据导出为 CSV。
 - 已完成：新增 external RX ILA CSV 解码工具，可从 Hardware Manager 导出的 `probe2` 数据中解出 lock ratio、lock score、I/Q、timing phase、NCO 频偏校正、ADC 频谱粗估和符号统计，并可对 NCO 频偏方向/幅度设置附加检查。
@@ -115,7 +115,7 @@
 - `Sim/tb_qpsk_rx_demod_impairments.v`：stage-2+ 进阶恢复验证，直接生成带 `3 kHz` 残余频偏等扰动的 QPSK ADC 输入。
 - `Sim/tb_qpsk_rx_demod_external_drift.v`：stage-2+ 外部输入漂移验证，直接生成独立 `2.010 Msym/s` QPSK ADC 输入并按 TX 参考校验 RX 输出。
 - `Sim/tb_qpsk_rx_demod_random_external.v`：stage-2+ 随机外部输入验证，使用带 `+15 kHz/-15 kHz`、宽压测 `+35 kHz/-35 kHz`、以及锁后 `+15 kHz -> +35 kHz` / `-15 kHz -> -35 kHz` 漂移的残余载波偏差，叠加慢幅度/DC 漂移和 ADC 采样噪声的 PRBS QPSK 符号，并按 TX 参考校验盲锁后的 RX 输出。
-- `Sim/tb_pl_comm_top_external_rx.v`：stage-2+ 顶层外部 RX 验证，实例化 `pl_comm_top_fixed_cfg` 的 `FIXED_TX_EN=0/FIXED_RX_EN=1` 模式，检查 TX 关闭回零、J11 debug 输出、`+15 kHz/-15 kHz` 与宽压测 `+35 kHz/-35 kHz` 残余频偏方向和外部 ADC 输入解调。
+- `Sim/tb_pl_comm_top_external_rx.v`：stage-2+ 顶层外部 RX 验证，实例化 `pl_comm_top_fixed_cfg` 的 `FIXED_TX_EN=0/FIXED_RX_EN=1` 模式，检查 TX 关闭回零、J11 debug 输出、`+15 kHz/-15 kHz`、宽压测 `+35 kHz/-35 kHz`、以及锁后 `+15 kHz -> +35 kHz` / `-15 kHz -> -35 kHz` 漂移下的残余频偏方向和外部 ADC 输入解调。
 - 离线脚本：`Tool/matlab/qpsk_single_dac_demod_demo.m`（读取 CSV 做离线解调示例）。
 
 ### 2.6 当前注意事项
@@ -170,6 +170,9 @@
 - 运行 stage-2+ 顶层外部 RX 宽频偏模式仿真：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_pl_comm_top_external_rx_wide_sim.tcl`
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_pl_comm_top_external_rx_wide_neg_sim.tcl`
+- 运行 stage-2+ 顶层外部 RX 锁后载波漂移仿真：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_pl_comm_top_external_rx_drift_sim.tcl`
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_pl_comm_top_external_rx_drift_neg_sim.tcl`
 - 刷新当前 BD 并导出 J11 RX demod debug 引脚：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/export_rx_demod_j11_debug.tcl`
 - 切到外部 RX 上板验证模式（关闭本地 TX，保留 RX demod 与 DMA 采样）：
