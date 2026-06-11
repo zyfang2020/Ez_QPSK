@@ -240,6 +240,15 @@ powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1
     programmed at the time of enumeration.
   Treat this as an identity fingerprint, not as TX/RX role proof until the
   physical board is mapped.
+- 2026-06-12 continuation status:
+  - Vivado still saw only one hardware target:
+    `localhost:3121/xilinx_tcf/Digilent/210512180081`.
+  - `xc7z020_1` was still not programmed, and ILA count was `0`.
+  - Elevated `scripts/init_ps7_fclk.tcl -list` completed but did not list an
+    APU/Cortex-A9 target to initialize.
+  - Two-board programming/check flow was not run. Continue only after both JTAG
+    boards are visible or after one-at-a-time mapping identifies this target as
+    the intended RX board for a single-board RX input preflight.
 
 Hardware result on 2026-06-10:
 
