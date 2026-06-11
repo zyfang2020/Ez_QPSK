@@ -37,6 +37,10 @@ param(
     [double]$MinGrayCycleRatio = [double]::NaN,
     [double]$AdcBandCenterHz = [double]::NaN,
     [double]$AdcBandWidthHz = [double]::NaN,
+    [double]$MinAdcAcRms = [double]::NaN,
+    [double]$MinAdcBandPowerRatio = [double]::NaN,
+    [double]$MinAdcPeakHz = [double]::NaN,
+    [double]$MaxAdcPeakHz = [double]::NaN,
     [ValidateSet("", "positive", "negative", "nonzero")]
     [string]$ExpectNcoSign = "",
     [int]$MinNcoAbs = -1,
@@ -247,6 +251,18 @@ foreach ($csv in $CsvFiles) {
     }
     if (![double]::IsNaN($AdcBandWidthHz)) {
         $decodeArgs += @("--adc-band-width-hz", "$AdcBandWidthHz")
+    }
+    if (![double]::IsNaN($MinAdcAcRms)) {
+        $decodeArgs += @("--min-adc-ac-rms", "$MinAdcAcRms")
+    }
+    if (![double]::IsNaN($MinAdcBandPowerRatio)) {
+        $decodeArgs += @("--min-adc-band-power-ratio", "$MinAdcBandPowerRatio")
+    }
+    if (![double]::IsNaN($MinAdcPeakHz)) {
+        $decodeArgs += @("--min-adc-peak-hz", "$MinAdcPeakHz")
+    }
+    if (![double]::IsNaN($MaxAdcPeakHz)) {
+        $decodeArgs += @("--max-adc-peak-hz", "$MaxAdcPeakHz")
     }
     if ($ExpectNcoSign -ne "") {
         $decodeArgs += @("--expect-nco-sign", $ExpectNcoSign)

@@ -543,6 +543,10 @@ def check_expectations(
     expect_nco_sign: str | None,
     min_nco_abs: int | None,
     max_nco_abs: int | None,
+    min_adc_ac_rms: float | None,
+    min_adc_band_power_ratio: float | None,
+    min_adc_peak_hz: float | None,
+    max_adc_peak_hz: float | None,
 ) -> list[str]:
     failures: list[str] = []
     samples = int(summary.get("samples", 0))
@@ -553,6 +557,10 @@ def check_expectations(
     valid_ratio = float(summary.get("valid_ratio", 0.0))
     adc_span = int(summary.get("adc_raw_span", 0))
     gray_cycle_ratio = float(summary.get("gray_cycle_best_match_ratio", 0.0))
+    adc_ac_rms = float(summary.get("adc_ac_rms", 0.0))
+    adc_band_power_ratio = float(summary.get("adc_spectrum_band_power_ratio", 0.0))
+    adc_peak_hz_value = summary.get("adc_spectrum_peak_hz")
+    adc_peak_hz = float(adc_peak_hz_value) if adc_peak_hz_value is not None else None
     nco_check_value = summary.get("nco_freq_corr_last_when_locked")
     if nco_check_value is None:
         nco_check_value = summary.get("nco_freq_corr_last", 0)
@@ -582,6 +590,28 @@ def check_expectations(
     if max_nco_abs is not None and nco_check_abs > max_nco_abs:
         failures.append(
             f"abs(nco_freq_corr_last_when_locked) {nco_check_abs} > {max_nco_abs}"
+        )
+    if min_adc_ac_rms is not None and adc_ac_rms < min_adc_ac_rms:
+        failures.append(f"adc_ac_rms {adc_ac_rms:.6g} < {min_adc_ac_rms:.6g}")
+    if (
+        min_adc_band_power_ratio is not None
+        and adc_band_power_ratio < min_adc_band_power_ratio
+    ):
+        failures.append(
+            "adc_spectrum_band_power_ratio "
+            f"{adc_band_power_ratio:.6g} < {min_adc_band_power_ratio:.6g}"
+        )
+    if min_adc_peak_hz is not None and (
+        adc_peak_hz is None or adc_peak_hz < min_adc_peak_hz
+    ):
+        failures.append(
+            f"adc_spectrum_peak_hz {adc_peak_hz} < {min_adc_peak_hz:.6g}"
+        )
+    if max_adc_peak_hz is not None and (
+        adc_peak_hz is None or adc_peak_hz > max_adc_peak_hz
+    ):
+        failures.append(
+            f"adc_spectrum_peak_hz {adc_peak_hz} > {max_adc_peak_hz:.6g}"
         )
 
     return failures
@@ -681,6 +711,26 @@ def main() -> int:
         type=int,
         help="Maximum absolute last locked nco_freq_corr value allowed for a passing check",
     )
+    parser.add_argument(
+        "--min-adc-ac-rms",
+        type=float,
+        help="Minimum ADC AC RMS required for a passing check",
+    )
+    parser.add_argument(
+        "--min-adc-band-power-ratio",
+        type=float,
+        help="Minimum ADC spectrum power ratio inside the configured diagnostic band",
+    )
+    parser.add_argument(
+        "--min-adc-peak-hz",
+        type=float,
+        help="Minimum allowed coarse ADC spectrum peak frequency",
+    )
+    parser.add_argument(
+        "--max-adc-peak-hz",
+        type=float,
+        help="Maximum allowed coarse ADC spectrum peak frequency",
+    )
     args = parser.parse_args()
 
     items, unknown_count = iter_decoded(args.csv_file, args.bus_column)
@@ -701,6 +751,10 @@ def main() -> int:
     expect_nco_sign = args.expect_nco_sign
     min_nco_abs = args.min_nco_abs
     max_nco_abs = args.max_nco_abs
+    min_adc_ac_rms = args.min_adc_ac_rms
+    min_adc_band_power_ratio = args.min_adc_band_power_ratio
+    min_adc_peak_hz = args.min_adc_peak_hz
+    max_adc_peak_hz = args.max_adc_peak_hz
     if args.check_external_rx:
         if min_lock_ratio is None:
             min_lock_ratio = 0.50
@@ -721,6 +775,10 @@ def main() -> int:
             expect_nco_sign,
             min_nco_abs,
             max_nco_abs,
+            min_adc_ac_rms,
+            min_adc_band_power_ratio,
+            min_adc_peak_hz,
+            max_adc_peak_hz,
         )
     )
     check_failures = (
@@ -733,6 +791,10 @@ def main() -> int:
             expect_nco_sign=expect_nco_sign,
             min_nco_abs=min_nco_abs,
             max_nco_abs=max_nco_abs,
+            min_adc_ac_rms=min_adc_ac_rms,
+            min_adc_band_power_ratio=min_adc_band_power_ratio,
+            min_adc_peak_hz=min_adc_peak_hz,
+            max_adc_peak_hz=max_adc_peak_hz,
         )
         if checks_requested
         else []

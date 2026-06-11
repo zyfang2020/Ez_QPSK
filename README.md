@@ -193,10 +193,10 @@
   - 本地随机模拟回环 smoke 可用：`powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode loopback_prbs`
   - 若外部源相对本地 `7 MHz` NCO 有已知正/负残余频偏，可追加例如 `-ExpectNcoSign positive -MinNcoAbs 96 -MaxNcoAbs 8192`；本地同钟回环的 NCO correction 可能为 0，不建议默认加这个约束。
   - 脚本会为每份 CSV 写 `*_summary.json`，并默认写 `Tool\data\<mode>_board_check_aggregate_summary.json`，聚合显示多次抓取的 lock ratio、valid ratio、ADC span、ADC 频谱峰值、7 MHz 附近带内能量占比、I/Q RMS 和 locked NCO correction 的 min/avg/max。可用 `-AggregateSummaryJson path\to\summary.json` 改输出位置。
-  - ADC 频谱粗估默认关注 `7 MHz ±2 MHz`；若外部源频点不同，可追加 `-AdcBandCenterHz` / `-AdcBandWidthHz` 调整聚合诊断带宽。
+  - ADC 频谱粗估默认关注 `7 MHz ±2 MHz`；若外部源频点不同，可追加 `-AdcBandCenterHz` / `-AdcBandWidthHz` 调整聚合诊断带宽；若要把频谱也纳入 PASS/FAIL，可追加例如 `-MinAdcAcRms 100 -MinAdcBandPowerRatio 0.8 -MinAdcPeakHz 6000000 -MaxAdcPeakHz 8000000`。
 - 解码 Vivado Hardware Manager 导出的 external RX ILA CSV：
   - `python Tool/python/decode_rx_demod_ila.py path\to\ila_export.csv --decoded-csv Tool\data\rx_demod_ila_decoded.csv --summary-json Tool\data\rx_demod_ila_summary.json`
-  - 解码摘要会把 `nco_freq_corr` 按默认 `100 MHz / 24-bit` NCO 换算为 Hz，并给出 ADC 动态范围、ADC 频谱粗估与简单诊断提示；可追加 `--expect-nco-sign positive|negative|nonzero`、`--min-nco-abs`、`--max-nco-abs` 做外部源频偏门槛检查，也可用 `--adc-band-center-hz` / `--adc-band-width-hz` 改频谱诊断带宽。
+  - 解码摘要会把 `nco_freq_corr` 按默认 `100 MHz / 24-bit` NCO 换算为 Hz，并给出 ADC 动态范围、ADC 频谱粗估与简单诊断提示；可追加 `--expect-nco-sign positive|negative|nonzero`、`--min-nco-abs`、`--max-nco-abs` 做外部源频偏门槛检查，也可用 `--adc-band-center-hz` / `--adc-band-width-hz` 改频谱诊断带宽，用 `--min-adc-ac-rms`、`--min-adc-band-power-ratio`、`--min-adc-peak-hz`、`--max-adc-peak-hz` 加频谱门槛。
   - 第一轮外部输入验收可加 `--check-external-rx`，默认要求 `lock_ratio >= 0.50`、`valid_ratio >= 0.005`、`adc_raw_span >= 16`，不满足时命令返回非零。
   - 若外部 QPSK 源可配置为本项目 Gray 循环 `00 -> 01 -> 11 -> 10`，再加 `--check-gray-cycle`，工具会允许循环起点和方向不确定，并检查有效符号序列是否持续匹配。
 

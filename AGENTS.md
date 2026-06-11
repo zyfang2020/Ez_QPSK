@@ -117,6 +117,9 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1
 - For local analog PRBS loopback smoke, use `-Mode loopback_prbs`.
 - The board check writes per-capture `*_summary.json` files and a multi-capture aggregate JSON, defaulting to `Tool/data/<mode>_board_check_aggregate_summary.json`; override with `-AggregateSummaryJson`.
 - The decoder and board check now include coarse ADC spectral diagnostics. Defaults are centered at `7 MHz` with `4 MHz` width; override with Python `--adc-band-center-hz/--adc-band-width-hz` or PowerShell `-AdcBandCenterHz/-AdcBandWidthHz`.
+- Optional ADC spectral gates are available for real external-source checks:
+  - PowerShell: `-MinAdcAcRms <lsb> -MinAdcBandPowerRatio <ratio> -MinAdcPeakHz <hz> -MaxAdcPeakHz <hz>`
+  - Python: `--min-adc-ac-rms <lsb> --min-adc-band-power-ratio <ratio> --min-adc-peak-hz <hz> --max-adc-peak-hz <hz>`
 - For a real external source with known residual carrier direction, the board check and decoder now accept optional NCO gates:
   - PowerShell: `-ExpectNcoSign positive|negative|nonzero -MinNcoAbs <lsb> -MaxNcoAbs <lsb>`
   - Python: `--expect-nco-sign positive|negative|nonzero --min-nco-abs <lsb> --max-nco-abs <lsb>`
