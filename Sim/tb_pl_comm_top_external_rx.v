@@ -22,11 +22,23 @@ localparam integer CAL_SYMS = 32;
 localparam integer SEARCH_WIN = 6;
 localparam integer LOCK_SETTLE_SYMS = 64;
 localparam integer TARGET_LOCKED_SYMS = 260;
+`ifdef QPSK_TOP_EXT_RX_WIDE
+localparam integer MIN_NCO_CORR = 4500;
+`elsif QPSK_TOP_EXT_RX_WIDE_NEG
+localparam integer MIN_NCO_CORR = 4500;
+`else
 localparam integer MIN_NCO_CORR = 96;
+`endif
 
 localparam real FS_HZ = 100000000.0;
 localparam real CARRIER_HZ = 7000000.0;
-`ifdef QPSK_TOP_EXT_RX_NEG
+`ifdef QPSK_TOP_EXT_RX_WIDE_NEG
+localparam real CARRIER_OFFSET_HZ = -35000.0;
+localparam integer EXPECT_NCO_SIGN = -1;
+`elsif QPSK_TOP_EXT_RX_WIDE
+localparam real CARRIER_OFFSET_HZ = 35000.0;
+localparam integer EXPECT_NCO_SIGN = 1;
+`elsif QPSK_TOP_EXT_RX_NEG
 localparam real CARRIER_OFFSET_HZ = -15000.0;
 localparam integer EXPECT_NCO_SIGN = -1;
 `else
@@ -444,7 +456,13 @@ initial begin
 end
 
 initial begin
+`ifdef QPSK_TOP_EXT_RX_WIDE
+    #12000000;
+`elsif QPSK_TOP_EXT_RX_WIDE_NEG
+    #12000000;
+`else
     #6000000;
+`endif
     tb_fail("ERR_TIMEOUT");
 end
 
