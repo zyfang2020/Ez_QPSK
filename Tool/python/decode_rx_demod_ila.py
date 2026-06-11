@@ -17,6 +17,8 @@ BUS_WIDTH = 96
 DEFAULT_SAMPLE_RATE_HZ = 100_000_000.0
 DEFAULT_PHASE_WIDTH = 24
 DEFAULT_FREQ_CORR_LIMIT = 8192
+DEFAULT_ADC_BAND_CENTER_HZ = 7_000_000.0
+DEFAULT_ADC_BAND_WIDTH_HZ = 4_000_000.0
 
 
 def sign_extend(value: int, width: int) -> int:
@@ -232,6 +234,91 @@ def transition_count(values: list[int]) -> int:
     return sum(1 for prev, cur in zip(values, values[1:]) if cur != prev)
 
 
+def adc_spectrum_metrics(
+    values: list[int],
+    sample_rate_hz: float,
+    band_center_hz: float,
+    band_width_hz: float,
+) -> dict[str, object]:
+    if len(values) < 8:
+        return {
+            "adc_ac_rms": 0.0,
+            "adc_spectrum_bin_hz": 0.0,
+            "adc_spectrum_peak_bin": None,
+            "adc_spectrum_peak_hz": None,
+            "adc_spectrum_peak_power_ratio": 0.0,
+            "adc_spectrum_band_center_hz": band_center_hz,
+            "adc_spectrum_band_width_hz": band_width_hz,
+            "adc_spectrum_band_power_ratio": 0.0,
+            "adc_spectrum_band_peak_bin": None,
+            "adc_spectrum_band_peak_hz": None,
+        }
+
+    mean_value = statistics.fmean(values)
+    n = len(values)
+    if n > 1:
+        samples = [
+            (value - mean_value) * (0.5 - (0.5 * math.cos((2.0 * math.pi * idx) / (n - 1))))
+            for idx, value in enumerate(values)
+        ]
+    else:
+        samples = [values[0] - mean_value]
+    adc_ac_rms = math.sqrt(sum((value - mean_value) ** 2 for value in values) / n)
+    bin_hz = sample_rate_hz / n
+    band_half_width = max(0.0, band_width_hz / 2.0)
+    band_lo = max(0.0, band_center_hz - band_half_width)
+    band_hi = min(sample_rate_hz / 2.0, band_center_hz + band_half_width)
+
+    total_power = 0.0
+    peak_power = -1.0
+    peak_bin: int | None = None
+    band_power = 0.0
+    band_peak_power = -1.0
+    band_peak_bin: int | None = None
+
+    for bin_idx in range(1, (n // 2) + 1):
+        coeff = 2.0 * math.cos((2.0 * math.pi * bin_idx) / n)
+        s_prev = 0.0
+        s_prev2 = 0.0
+        for sample in samples:
+            s_cur = sample + (coeff * s_prev) - s_prev2
+            s_prev2 = s_prev
+            s_prev = s_cur
+        power = (s_prev2 * s_prev2) + (s_prev * s_prev) - (coeff * s_prev * s_prev2)
+        freq_hz = bin_idx * bin_hz
+        total_power += power
+        if power > peak_power:
+            peak_power = power
+            peak_bin = bin_idx
+        if band_lo <= freq_hz <= band_hi:
+            band_power += power
+            if power > band_peak_power:
+                band_peak_power = power
+                band_peak_bin = bin_idx
+
+    if total_power <= 0.0:
+        peak_ratio = 0.0
+        band_ratio = 0.0
+    else:
+        peak_ratio = max(0.0, peak_power) / total_power
+        band_ratio = band_power / total_power
+
+    return {
+        "adc_ac_rms": adc_ac_rms,
+        "adc_spectrum_bin_hz": bin_hz,
+        "adc_spectrum_peak_bin": peak_bin,
+        "adc_spectrum_peak_hz": (peak_bin * bin_hz) if peak_bin is not None else None,
+        "adc_spectrum_peak_power_ratio": peak_ratio,
+        "adc_spectrum_band_center_hz": band_center_hz,
+        "adc_spectrum_band_width_hz": band_width_hz,
+        "adc_spectrum_band_power_ratio": band_ratio,
+        "adc_spectrum_band_peak_bin": band_peak_bin,
+        "adc_spectrum_band_peak_hz": (band_peak_bin * bin_hz)
+        if band_peak_bin is not None
+        else None,
+    }
+
+
 def gray_cycle_metrics(symbols: list[int]) -> dict[str, object]:
     cycle = [0, 1, 3, 2]
     if not symbols:
@@ -275,6 +362,7 @@ def make_hints(
     valid_ratio: float,
     nco_abs_max: int,
     freq_corr_limit: int,
+    adc_band_power_ratio: float,
     valid_symbols: list[int],
     iq_rms_valid: float,
     gray_match_ratio: float,
@@ -290,6 +378,8 @@ def make_hints(
         hints.append("Very few valid symbols were observed; confirm RX enable and ILA clock/probes.")
     if lock_ratio < 0.10:
         hints.append("Lock ratio is low; check carrier frequency, symbol rate, polarity, and input amplitude.")
+    if adc_span >= 16 and adc_band_power_ratio < 0.08:
+        hints.append("ADC activity is not concentrated near the expected carrier band; check source frequency.")
     if valid_symbols and len(set(valid_symbols)) < 2:
         hints.append("Valid symbols barely change; check whether the source is static or badly clipped.")
     if len(valid_symbols) >= 16 and gray_match_ratio >= 0.85:
@@ -307,6 +397,8 @@ def summarize(
     sample_rate_hz: float = DEFAULT_SAMPLE_RATE_HZ,
     phase_width: int = DEFAULT_PHASE_WIDTH,
     freq_corr_limit: int = DEFAULT_FREQ_CORR_LIMIT,
+    adc_band_center_hz: float = DEFAULT_ADC_BAND_CENTER_HZ,
+    adc_band_width_hz: float = DEFAULT_ADC_BAND_WIDTH_HZ,
 ) -> dict[str, object]:
     if not items:
         return {"samples": 0, "unknown_rows": unknown_count}
@@ -324,6 +416,12 @@ def summarize(
     adc_raw = [item["adc_raw"] for item in items]
     valid_symbols = [item["symbol"] for item in valid]
     gray_metrics = gray_cycle_metrics(valid_symbols)
+    adc_spectrum = adc_spectrum_metrics(
+        adc_raw,
+        sample_rate_hz=sample_rate_hz,
+        band_center_hz=adc_band_center_hz,
+        band_width_hz=adc_band_width_hz,
+    )
     adc_span = max(adc_raw) - min(adc_raw)
     nco_lsb_hz = sample_rate_hz / float(1 << phase_width)
     iq_rms_valid = rms_iq(valid)
@@ -384,6 +482,7 @@ def summarize(
         "adc_raw_max": max(adc_raw),
         "adc_raw_mean": statistics.fmean(adc_raw),
         "adc_raw_span": adc_span,
+        **adc_spectrum,
         "locked_sample_count": len(locked),
         "hints": make_hints(
             unknown_count=unknown_count,
@@ -392,6 +491,7 @@ def summarize(
             valid_ratio=valid_ratio,
             nco_abs_max=nco_abs_max,
             freq_corr_limit=freq_corr_limit,
+            adc_band_power_ratio=float(adc_spectrum["adc_spectrum_band_power_ratio"]),
             valid_symbols=valid_symbols,
             iq_rms_valid=iq_rms_valid,
             gray_match_ratio=float(gray_metrics["gray_cycle_best_match_ratio"]),
@@ -525,6 +625,18 @@ def main() -> int:
         help="Absolute qpsk_rx_fixed_demod nco_freq_corr limit for diagnostics",
     )
     parser.add_argument(
+        "--adc-band-center-hz",
+        type=float,
+        default=DEFAULT_ADC_BAND_CENTER_HZ,
+        help="Expected ADC input band center used for coarse spectral diagnostics",
+    )
+    parser.add_argument(
+        "--adc-band-width-hz",
+        type=float,
+        default=DEFAULT_ADC_BAND_WIDTH_HZ,
+        help="Expected ADC input band width used for coarse spectral diagnostics",
+    )
+    parser.add_argument(
         "--check-external-rx",
         action="store_true",
         help="Return nonzero if basic external-RX capture thresholds are not met",
@@ -578,6 +690,8 @@ def main() -> int:
         sample_rate_hz=args.sample_rate_hz,
         phase_width=args.phase_width,
         freq_corr_limit=args.freq_corr_limit,
+        adc_band_center_hz=args.adc_band_center_hz,
+        adc_band_width_hz=args.adc_band_width_hz,
     )
 
     min_lock_ratio = args.min_lock_ratio

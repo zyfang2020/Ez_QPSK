@@ -35,6 +35,8 @@ param(
     [double]$MinValidRatio = [double]::NaN,
     [int]$MinAdcSpan = -1,
     [double]$MinGrayCycleRatio = [double]::NaN,
+    [double]$AdcBandCenterHz = [double]::NaN,
+    [double]$AdcBandWidthHz = [double]::NaN,
     [ValidateSet("", "positive", "negative", "nonzero")]
     [string]$ExpectNcoSign = "",
     [int]$MinNcoAbs = -1,
@@ -240,6 +242,12 @@ foreach ($csv in $CsvFiles) {
     if (![double]::IsNaN($MinGrayCycleRatio)) {
         $decodeArgs += @("--min-gray-cycle-ratio", "$MinGrayCycleRatio")
     }
+    if (![double]::IsNaN($AdcBandCenterHz)) {
+        $decodeArgs += @("--adc-band-center-hz", "$AdcBandCenterHz")
+    }
+    if (![double]::IsNaN($AdcBandWidthHz)) {
+        $decodeArgs += @("--adc-band-width-hz", "$AdcBandWidthHz")
+    }
     if ($ExpectNcoSign -ne "") {
         $decodeArgs += @("--expect-nco-sign", $ExpectNcoSign)
     }
@@ -310,6 +318,10 @@ if ($Summaries.Count -gt 0) {
         adc_raw_span = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "adc_raw_span" })
         lock_score_max = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "lock_score_max" })
         iq_rms_when_valid = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "iq_rms_when_valid" })
+        adc_ac_rms = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "adc_ac_rms" })
+        adc_spectrum_peak_hz = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "adc_spectrum_peak_hz" })
+        adc_spectrum_band_power_ratio = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "adc_spectrum_band_power_ratio" })
+        adc_spectrum_band_peak_hz = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "adc_spectrum_band_peak_hz" })
         nco_freq_corr_last_when_locked = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "nco_freq_corr_last_when_locked" })
         nco_freq_corr_last_when_locked_hz = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "nco_freq_corr_last_when_locked_hz" })
         captures_detail = @($Summaries | ForEach-Object {
@@ -319,6 +331,10 @@ if ($Summaries.Count -gt 0) {
                 lock_ratio = Get-JsonProperty $_.summary "lock_ratio"
                 valid_ratio = Get-JsonProperty $_.summary "valid_ratio"
                 adc_raw_span = Get-JsonProperty $_.summary "adc_raw_span"
+                adc_ac_rms = Get-JsonProperty $_.summary "adc_ac_rms"
+                adc_spectrum_peak_hz = Get-JsonProperty $_.summary "adc_spectrum_peak_hz"
+                adc_spectrum_band_power_ratio = Get-JsonProperty $_.summary "adc_spectrum_band_power_ratio"
+                adc_spectrum_band_peak_hz = Get-JsonProperty $_.summary "adc_spectrum_band_peak_hz"
                 lock_score_max = Get-JsonProperty $_.summary "lock_score_max"
                 nco_freq_corr_last_when_locked = Get-JsonProperty $_.summary "nco_freq_corr_last_when_locked"
                 nco_freq_corr_last_when_locked_hz = Get-JsonProperty $_.summary "nco_freq_corr_last_when_locked_hz"
@@ -330,6 +346,10 @@ if ($Summaries.Count -gt 0) {
     Write-Host (Format-Stats "lock_ratio" $Aggregate.lock_ratio)
     Write-Host (Format-Stats "valid_ratio" $Aggregate.valid_ratio)
     Write-Host (Format-Stats "adc_raw_span" $Aggregate.adc_raw_span)
+    Write-Host (Format-Stats "adc_ac_rms" $Aggregate.adc_ac_rms)
+    Write-Host (Format-Stats "adc_spectrum_peak_hz" $Aggregate.adc_spectrum_peak_hz)
+    Write-Host (Format-Stats "adc_spectrum_band_power_ratio" $Aggregate.adc_spectrum_band_power_ratio)
+    Write-Host (Format-Stats "adc_spectrum_band_peak_hz" $Aggregate.adc_spectrum_band_peak_hz)
     Write-Host (Format-Stats "lock_score_max" $Aggregate.lock_score_max)
     Write-Host (Format-Stats "iq_rms_when_valid" $Aggregate.iq_rms_when_valid)
     Write-Host (Format-Stats "nco_freq_corr_last_when_locked" $Aggregate.nco_freq_corr_last_when_locked)
