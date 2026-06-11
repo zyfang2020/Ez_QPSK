@@ -7,6 +7,7 @@
 - `list_hw_targets.tcl`：只读列出 Vivado Hardware Manager 可见的 JTAG target/device/DNA/ILA，用来确认板子身份。
 - `program_bitstream.tcl`：通用 bitstream 烧录入口，支持 `-target` / `-device`。
 - `init_ps7_fclk.tcl`：通过 XSCT 初始化 Zynq PS7/FCLK，使由 PS `FCLK_CLK0` 驱动的 PL/debug_hub/ILA 有时钟。
+- `download_ps_app.tcl`：通过 XSCT 运行 `ps7_init/ps7_post_config`，下载并启动裸机 ELF。
 - `check_external_rx_board.ps1`：烧录、抓 ILA、解码 RX demod 的一键检查入口。
 - `wait_external_rx_signal.ps1`：反复跑 `SignalOnly`，等 ADC 有外部输入后再进入完整 demod 检查。
 - `run_two_board_external_link.ps1`：两板真实链路编排入口，要求显式给出 TX/RX 的 HW target 和 PS target。
@@ -58,6 +59,14 @@
 - `design has no supported debug core(s)`
 - ILA count 为 `0`
 
+如果还需要让 PS 端裸机程序实际运行，可下载 ELF：
+
+```powershell
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/download_ps_app.tcl -target <xsct_target>
+```
+
+默认 ELF 是最新 external-RX smoke build 的 `baremetal_dma_rx_smoke.elf`；可用 `-elf <path>` 覆盖。若 `download_ps_app.tcl -list` 没有列出 APU/Cortex-A9 target，则还不能下载运行 PS 程序，需要先解决 PS JTAG target 可见性。
+
 ### 5. RX 输入预检与完整检查
 
 ```powershell
@@ -94,5 +103,5 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mo
 - bitstream：`run_external_rx_bitstream.tcl`、`run_original_interface_tx_bitstream.tcl`、`run_new_interface_rx_bitstream.tcl`
 - 烧录/抓取：`program_bitstream.tcl`、`program_external_rx_bitstream.tcl`、`capture_external_rx_ila.tcl`
 - 板级检查：`check_external_rx_board.ps1`、`wait_external_rx_signal.ps1`、`run_two_board_external_link.ps1`
-- PS/XSA/Vitis：`init_ps7_fclk.tcl`、`export_current_xsa.tcl`、`test_vitis_xsa_build.tcl`
+- PS/XSA/Vitis：`init_ps7_fclk.tcl`、`download_ps_app.tcl`、`export_current_xsa.tcl`、`test_vitis_xsa_build.tcl`
 - 工程恢复：`rebuild_project_current.tcl`

@@ -262,6 +262,17 @@ powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1
     whether serial `210512180081` is the new-interface RX board; it only proves
     the PL can be programmed and that the PS/FCLK debug clock path is not active
     or not accessible through XSCT.
+- 2026-06-12 PS download clarification:
+  - The previous RX identity attempt only programmed the PL through Vivado; it
+    did not download/run a Vitis PS ELF.
+  - `scripts/download_ps_app.tcl` was added to run `ps7_init`,
+    `ps7_post_config`, download a bare-metal ELF, and continue Cortex-A9.
+  - Elevated `download_ps_app.tcl -list`, direct XSCT `targets`/`jtag targets`,
+    and XSDB `targets`/`jtag targets` all returned no targets, even though
+    Vivado Hardware Manager still listed `arm_dap_0` and `xc7z020_1`.
+  - No PS ELF was downloaded because the System Debugger side did not expose an
+    APU/Cortex-A9 target. Resolve XSCT/XSDB target visibility before expecting
+    PS `FCLK_CLK0`, `dbg_hub`, or ILA capture to work.
 
 Hardware result on 2026-06-10:
 
