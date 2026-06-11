@@ -166,6 +166,13 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mo
   preflight; it does not prove that the correct board was selected or that QPSK
   demodulation will lock.
 - Use `-SignalOnly` as the first real external-source preflight when the physical input path is uncertain. It skips lock/valid requirements and defaults to `MinAdcSpan=16`, so it answers only whether the ADC sees enough input activity before demod lock is expected.
+- The new-interface RX analog/input chain may have an intermittent or broken
+  physical link. If TX/RX targets have been explicitly mapped, both PS/FCLK
+  sides have been initialized, and `new_interface_rx -SignalOnly` still reports
+  `adc_input_state=too_small` / `rx_demod_state=waiting_for_adc_input` with only
+  near-midscale noise, treat this as a likely RX physical-link blocker rather
+  than an RTL demod failure. Pause hardware bring-up and wait for the user to
+  repair/reconnect the RX path before continuing full demod checks.
 - `scripts/wait_external_rx_signal.ps1` can poll the `-SignalOnly` preflight and, with `-RunFullCheck`, automatically run the full external-RX check once ADC input activity passes. Use it while adjusting an external QPSK source:
 
 ```powershell

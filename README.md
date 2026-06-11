@@ -136,6 +136,7 @@
 - `loopback_prbs` 是随机符号压力测试模式，也已作为本地模拟回环的阶段性硬件验收通过。2026-06-11 最新 ILA 三次抓取 `Tool/data/local_prbs_loopback_post_fix_ila_00..02.csv` 均通过 `--check-external-rx`：`lock_ratio=1`，`lock_score=255`，有效符号数 `21/20/21`，ADC span `964/1000/976`，符号熵约 `1.88..1.99` bits。PRBS 下 Gray-cycle 匹配率低是预期现象，不作为失败依据；当前幅度接近满量程，后续若要留余量可适当降低模拟链路增益。
 - `external_rx` 会关闭本地 DAC TX。2026-06-11 最新 external RX ILA 抓取 `Tool/data/external_rx_board_check.csv` 显示 ADC span 只有 `2` 且 `lock_ratio=0`，这不是当前 RTL 判定失败的主要证据，而是 ADC 端没有足够外部 QPSK 输入幅度的证据。接入真实外部源后，优先用 `-SignalOnly` 确认 ADC span 明显大于几十个 LSB，再看 lock 和符号统计。
 - 两板模式的角色已固定：原 AX7020 风格接口做 TX，新 HS 接口做 RX。`scripts/run_second_board_tx_bitstream.tcl` 已改为报错保护，避免把新接口误当 TX。随机噪声/空输入抓取只能说明 ADC 采样链是否有活动或是否卡死，不能单独证明 JTAG 选中了正确板子，也不能替代接入 PRBS/Gray QPSK 后的 `-SignalOnly` 和完整 demod 检查。
+- 新 HS 接口 RX 侧模拟/输入链路可能存在物理断点。若已经明确 TX/RX JTAG target、两侧 PS/FCLK 已初始化，且 `new_interface_rx -SignalOnly` 仍只显示近中点小噪声（例如 `adc_input_state=too_small` / `rx_demod_state=waiting_for_adc_input`），应优先按外部输入链路问题处理，暂停完整 demod 检查，等 RX 连接/供电/模拟链路修复后再继续。
 - external RX bitstream 的 `.ltx` 中，BD ILA `probe2` 连接 `rx_demod_dbg_bus[95:0]`。位域：`[95:80]` signed `nco_freq_corr`，`[79:64]` I，`[63:48]` Q，`[47:40]` lock score，`[39:34]` best timing phase，`[33:30]` phase bin，`[29]` lock，`[28]` valid，`[27:26]` symbol，`[25:16]` raw ADC pins，`[15:0]` captured ADC stream sample。
 - external RX bitstream 中，BD ILA 使用 PS `FCLK_CLK0` 采样，与 RX demod 同域；J11 管脚仍建议同时观察实时 bit/lock。
 - 当前“ADC->AXI->DDR”链路仍保留，在线解调支路不替代原始采样搬运。
@@ -323,7 +324,7 @@
 ### 3.6 当前阶段下一步（对齐阶段 2）
 
 1. 本地模拟回环 `loopback_prbs` 已通过，`external_rx` 最新 bitstream/XSA/Vitis smoke 也已就绪；下一步先把独立外部 QPSK 源真正送入 ADC，再用 J11 `rx_demod_bit/rx_demod_lock` 和 ILA 做可观测验证。
-2. 接入外部源后优先运行 `scripts/check_external_rx_board.ps1 -SignalOnly` 做输入预检，或者用 `scripts/wait_external_rx_signal.ps1 -RunFullCheck` 让脚本轮询等待信号出现后自动进入完整检查；第一关先看 ADC span 是否明显大于几十个 LSB，并看三次抓取是否稳定。第二关看 `adc_spectrum_peak_hz` 和 `adc_spectrum_band_power_ratio` 是否说明能量在预期载波附近。若 ADC span 仍只有个位数，先查外部源、模拟链路、ADC 输入偏置/供电和连接。
+2. 接入外部源后优先运行 `scripts/check_external_rx_board.ps1 -SignalOnly` 做输入预检，或者用 `scripts/wait_external_rx_signal.ps1 -RunFullCheck` 让脚本轮询等待信号出现后自动进入完整检查；第一关先看 ADC span 是否明显大于几十个 LSB，并看三次抓取是否稳定。第二关看 `adc_spectrum_peak_hz` 和 `adc_spectrum_band_power_ratio` 是否说明能量在预期载波附近。若 ADC span 仍只有个位数，先查外部源、RX 模拟链路断点、ADC 输入偏置/供电和连接；这类结果先按物理输入 blocker 处理，不作为解调算法失败。
 3. 若 ADC span 正常，再运行不带 `-SignalOnly` 的完整 external-RX 检查，观察 lock ratio、lock score、I/Q 幅度、timing phase 和 `nco_freq_corr` Hz 换算值；已知外部源频偏方向时可用 `-ExpectNcoSign` 或 `--expect-nco-sign` 把 NCO 方向纳入 PASS/FAIL；若外部源发 Gray 循环，则追加 `--check-gray-cycle` 做更接近验收的符号序列检查。
 4. 外部信号建议先从约 `7 MHz` 载波、`2 Msym/s`、中等 ADC 幅度开始；若 `rx_demod_lock` 不稳定，优先同时抓取 ADC 原始样本做离线频谱/星座交叉验证。
 5. 针对真实外部 QPSK 输入继续强化锁前宽频偏捕获、误码统计和 ILA/离线交叉验证；当前锁后 Costas-like PI 和候选质量评分已通过 demod 单元与顶层 external-RX 的 `+15 kHz/-15 kHz`、`+35 kHz/-35 kHz` 回归，以及锁后正/负向漂移仿真回归，但不能替代完整外部同步链。
