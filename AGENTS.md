@@ -115,6 +115,7 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1
 
 - By default it programs `artifacts/external_rx/Ez_QPSK_external_rx.bit`, captures three ILA CSV files, and runs `Tool/python/decode_rx_demod_ila.py --check-external-rx` on each.
 - For local analog PRBS loopback smoke, use `-Mode loopback_prbs`.
+- The board check writes per-capture `*_summary.json` files and a multi-capture aggregate JSON, defaulting to `Tool/data/<mode>_board_check_aggregate_summary.json`; override with `-AggregateSummaryJson`.
 - For a real external source with known residual carrier direction, the board check and decoder now accept optional NCO gates:
   - PowerShell: `-ExpectNcoSign positive|negative|nonzero -MinNcoAbs <lsb> -MaxNcoAbs <lsb>`
   - Python: `--expect-nco-sign positive|negative|nonzero --min-nco-abs <lsb> --max-nco-abs <lsb>`

@@ -8,6 +8,9 @@
 #
 # External source with known positive residual carrier offset:
 #   powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -ExpectNcoSign positive -MinNcoAbs 96 -MaxNcoAbs 8192
+#
+# The script writes per-capture summary JSON files and an aggregate summary JSON
+# with min/avg/max values across repeated captures.
 
 [CmdletBinding()]
 param(
@@ -21,6 +24,7 @@ param(
     [int]$WarmupMs = 500,
     [int]$GapMs = 50,
     [string]$Out = "",
+    [string]$AggregateSummaryJson = "",
 
     [switch]$NoProgram,
     [switch]$CheckGrayCycle,
@@ -89,6 +93,49 @@ function Decoded-CsvPath {
     return (Join-Path $dir ("{0}_decoded.csv" -f $stem))
 }
 
+function Numeric-Stats {
+    param([object[]]$Values)
+    $nums = @($Values | Where-Object { $null -ne $_ } | ForEach-Object { [double]$_ })
+    if ($nums.Count -eq 0) {
+        return [ordered]@{
+            count = 0
+            min = $null
+            avg = $null
+            max = $null
+        }
+    }
+    $measure = $nums | Measure-Object -Minimum -Average -Maximum
+    return [ordered]@{
+        count = $nums.Count
+        min = $measure.Minimum
+        avg = $measure.Average
+        max = $measure.Maximum
+    }
+}
+
+function Get-JsonProperty {
+    param(
+        [object]$Item,
+        [string]$Name
+    )
+    if ($Item.PSObject.Properties.Name -contains $Name) {
+        return $Item.$Name
+    }
+    return $null
+}
+
+function Format-Stats {
+    param(
+        [string]$Name,
+        [hashtable]$Stats
+    )
+    if ($Stats.count -eq 0) {
+        return ("INFO: aggregate {0}: no samples" -f $Name)
+    }
+    return ("INFO: aggregate {0}: min={1:g6} avg={2:g6} max={3:g6} n={4}" -f `
+        $Name, $Stats.min, $Stats.avg, $Stats.max, $Stats.count)
+}
+
 if ($Repeat -le 0) {
     throw "-Repeat must be positive."
 }
@@ -109,6 +156,12 @@ if ($Out -eq "") {
     $Out = Join-Path $ToolDataDir ("{0}_board_check.csv" -f $Mode)
 } else {
     $Out = Resolve-RepoPath $Out
+}
+
+if ($AggregateSummaryJson -eq "") {
+    $AggregateSummaryJson = Join-Path $ToolDataDir ("{0}_board_check_aggregate_summary.json" -f $Mode)
+} else {
+    $AggregateSummaryJson = Resolve-RepoPath $AggregateSummaryJson
 }
 
 $BitPath = Join-Path $RepoRoot ("artifacts\{0}\Ez_QPSK_{0}.bit" -f $Mode)
@@ -163,6 +216,7 @@ if ($ExistingCsv.Count -gt 0) {
 
 $passCount = 0
 $failCount = 0
+$CaptureResults = @()
 foreach ($csv in $CsvFiles) {
     $summaryJson = Summary-JsonPath $csv
     $decodeArgs = @(
@@ -207,9 +261,21 @@ foreach ($csv in $CsvFiles) {
     & $PythonExe @decodeArgs
     if ($LASTEXITCODE -eq 0) {
         $passCount++
+        $CaptureResults += [pscustomobject]@{
+            csv = $csv
+            summary_json = $summaryJson
+            passed = $true
+            exit_code = $LASTEXITCODE
+        }
     } else {
         $failCount++
         Write-Warning "ILA check failed for $csv with exit code $LASTEXITCODE."
+        $CaptureResults += [pscustomobject]@{
+            csv = $csv
+            summary_json = $summaryJson
+            passed = $false
+            exit_code = $LASTEXITCODE
+        }
     }
 }
 
@@ -219,6 +285,63 @@ if ($DryRun) {
 }
 
 Write-Host "INFO: passing captures: $passCount / $($CsvFiles.Count)"
+$Summaries = @()
+foreach ($result in $CaptureResults) {
+    if (Test-Path -LiteralPath $result.summary_json -PathType Leaf) {
+        $summary = Get-Content -LiteralPath $result.summary_json -Raw | ConvertFrom-Json
+        $Summaries += [pscustomobject]@{
+            csv = $result.csv
+            summary_json = $result.summary_json
+            passed = $result.passed
+            exit_code = $result.exit_code
+            summary = $summary
+        }
+    }
+}
+
+if ($Summaries.Count -gt 0) {
+    $Aggregate = [ordered]@{
+        mode = $Mode
+        captures = $Summaries.Count
+        pass_count = $passCount
+        fail_count = $failCount
+        lock_ratio = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "lock_ratio" })
+        valid_ratio = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "valid_ratio" })
+        adc_raw_span = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "adc_raw_span" })
+        lock_score_max = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "lock_score_max" })
+        iq_rms_when_valid = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "iq_rms_when_valid" })
+        nco_freq_corr_last_when_locked = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "nco_freq_corr_last_when_locked" })
+        nco_freq_corr_last_when_locked_hz = Numeric-Stats @($Summaries | ForEach-Object { Get-JsonProperty $_.summary "nco_freq_corr_last_when_locked_hz" })
+        captures_detail = @($Summaries | ForEach-Object {
+            [ordered]@{
+                csv = $_.csv
+                passed = $_.passed
+                lock_ratio = Get-JsonProperty $_.summary "lock_ratio"
+                valid_ratio = Get-JsonProperty $_.summary "valid_ratio"
+                adc_raw_span = Get-JsonProperty $_.summary "adc_raw_span"
+                lock_score_max = Get-JsonProperty $_.summary "lock_score_max"
+                nco_freq_corr_last_when_locked = Get-JsonProperty $_.summary "nco_freq_corr_last_when_locked"
+                nco_freq_corr_last_when_locked_hz = Get-JsonProperty $_.summary "nco_freq_corr_last_when_locked_hz"
+                check_failures = Get-JsonProperty $_.summary "check_failures"
+            }
+        })
+    }
+
+    Write-Host (Format-Stats "lock_ratio" $Aggregate.lock_ratio)
+    Write-Host (Format-Stats "valid_ratio" $Aggregate.valid_ratio)
+    Write-Host (Format-Stats "adc_raw_span" $Aggregate.adc_raw_span)
+    Write-Host (Format-Stats "lock_score_max" $Aggregate.lock_score_max)
+    Write-Host (Format-Stats "iq_rms_when_valid" $Aggregate.iq_rms_when_valid)
+    Write-Host (Format-Stats "nco_freq_corr_last_when_locked" $Aggregate.nco_freq_corr_last_when_locked)
+
+    $aggregateDir = Split-Path -Parent $AggregateSummaryJson
+    if ($aggregateDir -ne "") {
+        New-Item -ItemType Directory -Force -Path $aggregateDir | Out-Null
+    }
+    $Aggregate | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $AggregateSummaryJson -Encoding UTF8
+    Write-Host "INFO: aggregate_summary_json: $AggregateSummaryJson"
+}
+
 if ($failCount -ne 0) {
     Write-Host "ERROR: $failCount capture(s) failed external RX checks."
     exit 2
