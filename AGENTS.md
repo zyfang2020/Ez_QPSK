@@ -183,7 +183,10 @@ powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1
 
   Remove `-DryRun` only after the target mapping has been verified. Without
   `-RunFullCheck`, the helper runs only the new-interface RX `-SignalOnly`
-  ADC activity preflight.
+  ADC activity preflight. The helper refuses to use the same HW or XSCT target
+  for TX and RX by default; use `-AllowSameHwTarget` / `-AllowSamePsTarget`
+  only when intentionally working with a shared chain and explicitly selected
+  different devices.
 
 - The board check writes per-capture `*_summary.json` files and a multi-capture aggregate JSON. Full checks default to `Tool/data/<mode>_board_check_aggregate_summary.json`; `-SignalOnly` checks default to `Tool/data/<mode>_signal_check_aggregate_summary.json`; override with `-AggregateSummaryJson`.
 - Decoder summaries now include machine-readable `adc_input_state` and `rx_demod_state`. Current useful values include `too_small` / `waiting_for_adc_input` for missing external input and `active` / `locked` for a healthy demod capture. Aggregate JSON includes `adc_input_state_counts` and `rx_demod_state_counts`.

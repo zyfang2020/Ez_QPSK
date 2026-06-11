@@ -233,6 +233,7 @@
   - 枚举目标命令预览：`powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1 -DryRun -ListTargets`
   - 完整流程 dry-run：`powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1 -DryRun -TxTarget <tx_hw_target> -RxTarget <rx_hw_target> -TxPsTarget <tx_xsct_target> -RxPsTarget <rx_xsct_target> -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5`
   - 确认 target 映射后去掉 `-DryRun` 才会依次烧录原接口 TX、新接口 RX，初始化两边 PS/FCLK，并在 RX 板抓 ILA 检查。
+  - 默认拒绝 TX/RX 使用同一个 HW 或 XSCT target；只有共享 JTAG chain 且明确选择了不同 device 时，才考虑使用 `-AllowSameHwTarget` / `-AllowSamePsTarget`。
 - 解码 Vivado Hardware Manager 导出的 external RX ILA CSV：
   - `python Tool/python/decode_rx_demod_ila.py path\to\ila_export.csv --decoded-csv Tool\data\rx_demod_ila_decoded.csv --summary-json Tool\data\rx_demod_ila_summary.json`
   - 解码摘要会把 `nco_freq_corr` 按默认 `100 MHz / 24-bit` NCO 换算为 Hz，并给出 ADC 动态范围、ADC 频谱粗估与简单诊断提示；可追加 `--expect-nco-sign positive|negative|nonzero`、`--min-nco-abs`、`--max-nco-abs` 做外部源频偏门槛检查，也可用 `--adc-band-center-hz` / `--adc-band-width-hz` 改频谱诊断带宽，用 `--min-adc-ac-rms`、`--min-adc-band-power-ratio`、`--min-adc-peak-hz`、`--max-adc-peak-hz` 加频谱门槛。

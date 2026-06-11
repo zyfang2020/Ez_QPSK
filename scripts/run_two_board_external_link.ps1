@@ -47,6 +47,8 @@ param(
     [switch]$SkipRxPsInit,
     [switch]$RunFullCheck,
     [switch]$CheckGrayCycle,
+    [switch]$AllowSameHwTarget,
+    [switch]$AllowSamePsTarget,
 
     [int]$SignalRepeat = 1,
     [int]$FullRepeat = 3,
@@ -176,6 +178,17 @@ if (!$SkipPsInit -and !$SkipRxPsInit -and ($RxPsTarget -eq "")) {
 }
 if ($RxTarget -eq "") {
     throw "-RxTarget is required for RX board checks."
+}
+if (!$AllowSameHwTarget -and ($TxTarget -ne "") -and ($RxTarget -ne "") -and ($TxTarget -eq $RxTarget)) {
+    $deviceInfoMissing = (($TxDevice -eq "") -or ($RxDevice -eq ""))
+    $sameDevice = (($TxDevice -ne "") -and ($RxDevice -ne "") -and ($TxDevice -eq $RxDevice))
+    if ($deviceInfoMissing -or $sameDevice) {
+        throw "-TxTarget and -RxTarget both resolve to '$TxTarget'. Refusing to risk swapping TX/RX roles. Use separate targets, specify different -TxDevice/-RxDevice on a shared chain, or pass -AllowSameHwTarget intentionally."
+    }
+}
+if (!$AllowSamePsTarget -and !$SkipPsInit -and !$SkipTxPsInit -and !$SkipRxPsInit -and
+    ($TxPsTarget -ne "") -and ($RxPsTarget -ne "") -and ($TxPsTarget -eq $RxPsTarget)) {
+    throw "-TxPsTarget and -RxPsTarget both resolve to '$TxPsTarget'. Refusing to initialize the same PS target for both roles. Pass distinct XSCT targets or -AllowSamePsTarget intentionally."
 }
 
 Require-File $ProgramTcl "programming script"
