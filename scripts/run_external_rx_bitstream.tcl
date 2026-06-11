@@ -10,11 +10,16 @@
 #   vivado -mode batch -source scripts/run_external_rx_bitstream.tcl
 #   vivado -mode batch -source scripts/run_external_rx_bitstream.tcl -tclargs external_rx
 #   vivado -mode batch -source scripts/run_external_rx_bitstream.tcl -tclargs loopback
+#   vivado -mode batch -source scripts/run_external_rx_bitstream.tcl -tclargs new_interface_rx
+#   vivado -mode batch -source scripts/run_external_rx_bitstream.tcl -tclargs original_tx_prbs
 #
 # Modes:
-#   external_rx : TX disabled, RX enabled. Use with an external QPSK source.
-#   loopback    : TX enabled, RX enabled. Use for local DAC-to-ADC bring-up.
-#   loopback_prbs : TX enabled with PRBS7 QPSK symbols, RX enabled.
+#   external_rx      : AX7020 IO, TX disabled, RX enabled. Legacy/current-board RX.
+#   loopback         : AX7020 IO, TX enabled, RX enabled. Local DAC-to-ADC bring-up.
+#   loopback_prbs    : AX7020 IO, TX PRBS7 enabled, RX enabled.
+#   new_interface_rx : new HS IO, TX disabled, RX enabled. Preferred two-board RX.
+#   original_tx_prbs : original AX7020 IO, TX PRBS7 enabled, RX disabled.
+#   original_tx_gray : original AX7020 IO, TX Gray-cycle enabled, RX disabled.
 
 set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir ".."]]
@@ -31,29 +36,55 @@ if {[llength $argv] > 0} {
     set mode [lindex $argv 0]
 }
 
+set board_profile "ax7020"
+set artifact_mode $mode
 switch -- $mode {
     external_rx {
         set fixed_tx_en 0
         set fixed_rx_en 1
         set fixed_qpsk_mode_sel 0
+        set board_profile "ax7020"
     }
     loopback {
         set fixed_tx_en 1
         set fixed_rx_en 1
         set fixed_qpsk_mode_sel 0
+        set board_profile "ax7020"
     }
     loopback_prbs {
         set fixed_tx_en 1
         set fixed_rx_en 1
         set fixed_qpsk_mode_sel 1
+        set board_profile "ax7020"
+    }
+    new_interface_rx {
+        set fixed_tx_en 0
+        set fixed_rx_en 1
+        set fixed_qpsk_mode_sel 0
+        set board_profile "second_zynq"
+        set artifact_mode "new_interface_rx"
+    }
+    original_tx_prbs {
+        set fixed_tx_en 1
+        set fixed_rx_en 0
+        set fixed_qpsk_mode_sel 1
+        set board_profile "ax7020"
+        set artifact_mode "original_tx_prbs"
+    }
+    original_tx_gray {
+        set fixed_tx_en 1
+        set fixed_rx_en 0
+        set fixed_qpsk_mode_sel 0
+        set board_profile "ax7020"
+        set artifact_mode "original_tx_gray"
     }
     default {
-        puts "ERROR: unknown mode '$mode'. Expected external_rx, loopback, or loopback_prbs."
+        puts "ERROR: unknown mode '$mode'. Expected external_rx, loopback, loopback_prbs, new_interface_rx, original_tx_prbs, or original_tx_gray."
         exit 1
     }
 }
 
-set out_dir [file join $repo_root "artifacts" $mode]
+set out_dir [file join $repo_root "artifacts" $artifact_mode]
 
 proc add_file_if_missing {fileset_name file_path} {
     set fs [get_filesets $fileset_name]
@@ -199,7 +230,7 @@ if {[llength [get_runs impl_1]] == 0} {
 
 add_file_if_missing sources_1 [file join $repo_root "RTL" "modem" "qpsk_rx_fixed_demod.v"]
 add_file_if_missing constrs_1 $j11_xdc
-qpsk_select_board_io_constraints $repo_root "ax7020"
+qpsk_select_board_io_constraints $repo_root $board_profile
 
 open_bd_design $bd_path
 refresh_module_reference_if_possible $cell_name
@@ -262,7 +293,7 @@ if {[string first "Complete" $impl_status] < 0} {
 }
 
 open_run impl_1
-set timing_rpt [file join $repo_root "Ez_QPSK.runs" "impl_1" "timing_${mode}_bitstream.rpt"]
+set timing_rpt [file join $repo_root "Ez_QPSK.runs" "impl_1" "timing_${artifact_mode}_bitstream.rpt"]
 report_timing_summary -file $timing_rpt
 
 set setup_paths [get_timing_paths -max_paths 1 -setup]
@@ -276,10 +307,10 @@ if {[llength $hold_paths] > 0} {
     set hold_slack [get_property SLACK [lindex $hold_paths 0]]
 }
 
-puts "INFO: $mode setup slack: $setup_slack ns"
-puts "INFO: $mode hold slack: $hold_slack ns"
+puts "INFO: $artifact_mode setup slack: $setup_slack ns"
+puts "INFO: $artifact_mode hold slack: $hold_slack ns"
 if {$setup_slack < 0.0 || $hold_slack < 0.0} {
-    puts "ERROR: $mode timing check failed. See $timing_rpt"
+    puts "ERROR: $artifact_mode timing check failed. See $timing_rpt"
     close_project
     exit 1
 }
@@ -294,14 +325,14 @@ if {[llength $bit_candidates] == 0} {
 }
 
 set bit_src [lindex $bit_candidates 0]
-set bit_dst [file join $out_dir "Ez_QPSK_${mode}.bit"]
+set bit_dst [file join $out_dir "Ez_QPSK_${artifact_mode}.bit"]
 file copy -force $bit_src $bit_dst
 puts "INFO: copied bitstream: $bit_dst"
 
 set ltx_candidates [glob -nocomplain -directory $run_dir *.ltx]
 if {[llength $ltx_candidates] > 0} {
     set ltx_src [lindex $ltx_candidates 0]
-    set ltx_dst [file join $out_dir "Ez_QPSK_${mode}.ltx"]
+    set ltx_dst [file join $out_dir "Ez_QPSK_${artifact_mode}.ltx"]
     file copy -force $ltx_src $ltx_dst
     puts "INFO: copied probes: $ltx_dst"
 } else {
@@ -309,4 +340,4 @@ if {[llength $ltx_candidates] > 0} {
 }
 
 close_project
-puts "INFO: $mode bitstream build completed."
+puts "INFO: $artifact_mode bitstream build completed."

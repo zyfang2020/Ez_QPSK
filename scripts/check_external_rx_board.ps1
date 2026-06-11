@@ -17,7 +17,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("external_rx", "loopback", "loopback_prbs")]
+    [ValidateSet("external_rx", "new_interface_rx", "loopback", "loopback_prbs")]
     [string]$Mode = "external_rx",
 
     [string]$VivadoBat = "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat",
@@ -212,9 +212,11 @@ if ($ExistingCsv.Count -gt 0) {
     }
 } else {
     Require-File $CaptureTcl "capture script"
-    Require-File $LtxPath "probe file"
-    if (!$NoProgram) {
-        Require-File $BitPath "bitstream"
+    if (!$DryRun) {
+        Require-File $LtxPath "probe file"
+        if (!$NoProgram) {
+            Require-File $BitPath "bitstream"
+        }
     }
 
     $captureArgs = @(

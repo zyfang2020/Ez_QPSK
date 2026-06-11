@@ -118,19 +118,26 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1
 
 - By default it programs `artifacts/external_rx/Ez_QPSK_external_rx.bit`, captures three ILA CSV files, and runs `Tool/python/decode_rx_demod_ila.py --check-external-rx` on each.
 - For local analog PRBS loopback smoke, use `-Mode loopback_prbs`.
-- For two-board external-link bring-up, a second-Zynq TX-only profile is available.
-  It uses the user-provided high-speed ADC/DAC package pins and keeps the main
-  BD/PS structure unchanged. Build the TX image with:
+- For two-board external-link bring-up, keep the board roles explicit:
+  - Original AX7020-style interface: TX side.
+  - New user-provided high-speed interface: RX side.
+  Do not swap these roles. Build the original-interface TX image with:
 
 ```powershell
-& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_second_board_tx_bitstream.tcl -tclargs prbs
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_original_interface_tx_bitstream.tcl -tclargs prbs
 ```
 
-- The second-board profile switches only ADC/DAC IO constraints:
+Build the new-interface RX image with:
+
+```powershell
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_new_interface_rx_bitstream.tcl
+```
+
+- The new-interface RX profile switches only ADC/DAC IO constraints:
   - `Constraints/pl_comm_top_io_second_zynq_hs_dac.xdc`
   - `Constraints/pl_comm_top_io_second_zynq_hs_adc.xdc`
   The current `sys_clk_ax7020.xdc` and J11 debug constraints remain as project
-  placeholders until the second board's non-HS clock/reset/debug pins are
+  placeholders until the new board's non-HS clock/reset/debug pins are
   confirmed. Confirm bank-35 VCCO is compatible with `LVCMOS33` before hardware
   use.
 - With two JTAG boards connected, do not rely on the default first target.
@@ -139,16 +146,24 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1
 
 ```powershell
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -list
-& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts/second_board_tx_prbs/Ez_QPSK_second_board_tx_prbs.bit -ltx artifacts/second_board_tx_prbs/Ez_QPSK_second_board_tx_prbs.ltx -target <tx_target>
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit -ltx artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.ltx -target <tx_target>
 & "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <tx_ps_target>
-powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Target <rx_target> -SignalOnly
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.bit -ltx artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.ltx -target <rx_target>
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <rx_ps_target>
+powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode new_interface_rx -Target <rx_target> -SignalOnly
 ```
 - The preferred two-board flow is:
-  1. Program the current AX7020-style board with `external_rx`.
-  2. Program the second board with `second_board_tx_prbs`.
-  3. Connect second-board DAC/channel output into the current board ADC path.
-  4. Run `check_external_rx_board.ps1 -SignalOnly` on the RX board first, then
+  1. Program the original AX7020-style interface with `original_tx_prbs`.
+  2. Program the new high-speed interface with `new_interface_rx`.
+  3. Connect original-interface DAC/channel output into the new-interface ADC path.
+  4. Run `check_external_rx_board.ps1 -Mode new_interface_rx -SignalOnly` on the RX board first, then
      run the full external-RX check once ADC activity is present.
+- Board identity cannot be inferred safely from ADC noise alone. Use Vivado
+  `program_bitstream.tcl -list` and XSCT `init_ps7_fclk.tcl -list`, and if the
+  targets are ambiguous, identify them by plugging one JTAG cable at a time.
+  A random/noise-only RX capture is useful only as an ADC alive/stuck-input
+  preflight; it does not prove that the correct board was selected or that QPSK
+  demodulation will lock.
 - Use `-SignalOnly` as the first real external-source preflight when the physical input path is uncertain. It skips lock/valid requirements and defaults to `MinAdcSpan=16`, so it answers only whether the ADC sees enough input activity before demod lock is expected.
 - `scripts/wait_external_rx_signal.ps1` can poll the `-SignalOnly` preflight and, with `-RunFullCheck`, automatically run the full external-RX check once ADC input activity passes. Use it while adjusting an external QPSK source:
 
@@ -173,10 +188,24 @@ powershell -ExecutionPolicy Bypass -File scripts/wait_external_rx_signal.ps1 -Ru
   `PL TX -> DAC -> external filter/analog path -> ADC -> PL RX demod`.
 - This requires both DA and AD paths to be working and uses `loopback` mode with TX and RX enabled.
 - Use `loopback_prbs` as the preferred random-symbol stress mode after Gray loopback. Current hardware evidence shows stable PRBS lock on the local analog path.
-- After local analog loopback is stable, switch to `external_rx` mode for a separate external QPSK transmitter feeding the ADC.
-- The separate external transmitter can now be the second Zynq board in TX-only
-  PRBS or Gray mode. Use PRBS first for realistic random-symbol stress after
-  basic signal presence is confirmed.
+- After local analog loopback is stable, switch to the two-board mode where the
+  original AX7020-style interface transmits PRBS/Gray QPSK and the new high-speed
+  interface receives in `new_interface_rx` mode.
+- 2026-06-11 role correction:
+  - The original AX7020-style interface is the TX side.
+  - The new user-provided HS interface is the RX side.
+  - `scripts/run_second_board_tx_bitstream.tcl` is intentionally deprecated and
+    exits with an error to prevent accidentally treating the new interface as TX.
+  - `scripts/run_original_interface_tx_bitstream.tcl -tclargs prbs` generated
+    `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit/.ltx`; timing
+    passed with setup slack `0.326 ns` and hold slack `0.055 ns`.
+  - `scripts/run_new_interface_rx_bitstream.tcl` generated
+    `artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.bit/.ltx`; timing
+    passed with setup slack `0.065 ns` and hold slack `0.043 ns`.
+  - Current Vivado JTAG list saw one target:
+    `localhost:3121/xilinx_tcf/Digilent/210512180081` / `xc7z020_1`.
+    Do not assume TX/RX target identity until both cables are visible or one-at-a-time
+    cable mapping is performed.
 
 Hardware result on 2026-06-10:
 

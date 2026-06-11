@@ -6,7 +6,7 @@
 #       -bit artifacts/external_rx/Ez_QPSK_external_rx.bit \
 #       -ltx artifacts/external_rx/Ez_QPSK_external_rx.ltx
 #   vivado -mode batch -source scripts/program_bitstream.tcl -tclargs \
-#       -bit artifacts/second_board_tx_prbs/Ez_QPSK_second_board_tx_prbs.bit \
+#       -bit artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit \
 #       -target 1
 #   vivado -mode batch -source scripts/program_bitstream.tcl -tclargs -list
 

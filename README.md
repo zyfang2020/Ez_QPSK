@@ -91,11 +91,12 @@
   - 当前用于最小 bring-up：固定走 QPSK 内部测试发送路径。
   - 导出 `rx_demod_bit` 和 `rx_demod_lock` 两个板级 debug 输出；当前约束到 J11 PIN3/F17 与 J11 PIN4/F16。
   - 导出 `rx_demod_dbg_bus[95:0]` 给 BD 内现有 ILA 的 `probe2`，用于 external RX 上板时观察锁定质量、I/Q、定时相位和 NCO 频偏校正。
-- 第二块 Zynq 板 TX profile：
+- 两板真实链路 profile：
   - 新增高频 DAC/ADC 引脚约束 profile，映射用户提供的 `HS_DA_*` / `HS_AD_*` 到现有 `clk_dac/dac_data` 与 `clk_adc/adc_data` 顶层端口。
   - 不改 BD/PS 主结构；默认仍由 PS `FCLK_CLK0` 驱动 `clk_io`，再转发到 DAC/ADC。
-  - 推荐用 `second_board_tx_prbs` 作为独立外部发射源，当前板使用 `external_rx` 作为接收端，组成“第二板 TX -> 信道 -> 当前板 ADC/RX demod”的两板链路。
-  - 当前只确认了高频 ADC/DAC 引脚；第二板的非 HS `clk_50M` / debug 管脚尚未单独确认。实物下载前请确认 Bank 35 VCCO 与 `LVCMOS33` 匹配。
+  - 角色固定为“原 AX7020 风格接口 TX -> 信道 -> 新 HS 接口 ADC/RX demod”，不要把新接口当 TX 使用。
+  - 原接口 TX 推荐先用 `original_tx_prbs`，新接口 RX 使用 `new_interface_rx`。
+  - 当前只确认了新接口高频 ADC/DAC 引脚；新板的非 HS `clk_50M` / debug 管脚尚未单独确认。实物下载前请确认 Bank 35 VCCO 与 `LVCMOS33` 匹配。
 
 ### 2.4 目录与文件作用（按工程根目录）
 
@@ -134,6 +135,7 @@
 - 当前 RX demod 优先使用本地 Gray 相关锁定；若长期不能匹配该测试模式，会进入盲锁分支，用星座置信度和 decision-directed 相位误差形成外部随机数据的 lock。ILA 中的 `rx_demod_dbg_lock_score` 显示 Gray/盲锁两路质量分数中的较高值。
 - `loopback_prbs` 是随机符号压力测试模式，也已作为本地模拟回环的阶段性硬件验收通过。2026-06-11 最新 ILA 三次抓取 `Tool/data/local_prbs_loopback_post_fix_ila_00..02.csv` 均通过 `--check-external-rx`：`lock_ratio=1`，`lock_score=255`，有效符号数 `21/20/21`，ADC span `964/1000/976`，符号熵约 `1.88..1.99` bits。PRBS 下 Gray-cycle 匹配率低是预期现象，不作为失败依据；当前幅度接近满量程，后续若要留余量可适当降低模拟链路增益。
 - `external_rx` 会关闭本地 DAC TX。2026-06-11 最新 external RX ILA 抓取 `Tool/data/external_rx_board_check.csv` 显示 ADC span 只有 `2` 且 `lock_ratio=0`，这不是当前 RTL 判定失败的主要证据，而是 ADC 端没有足够外部 QPSK 输入幅度的证据。接入真实外部源后，优先用 `-SignalOnly` 确认 ADC span 明显大于几十个 LSB，再看 lock 和符号统计。
+- 两板模式的角色已固定：原 AX7020 风格接口做 TX，新 HS 接口做 RX。`scripts/run_second_board_tx_bitstream.tcl` 已改为报错保护，避免把新接口误当 TX。随机噪声/空输入抓取只能说明 ADC 采样链是否有活动或是否卡死，不能单独证明 JTAG 选中了正确板子，也不能替代接入 PRBS/Gray QPSK 后的 `-SignalOnly` 和完整 demod 检查。
 - external RX bitstream 的 `.ltx` 中，BD ILA `probe2` 连接 `rx_demod_dbg_bus[95:0]`。位域：`[95:80]` signed `nco_freq_corr`，`[79:64]` I，`[63:48]` Q，`[47:40]` lock score，`[39:34]` best timing phase，`[33:30]` phase bin，`[29]` lock，`[28]` valid，`[27:26]` symbol，`[25:16]` raw ADC pins，`[15:0]` captured ADC stream sample。
 - external RX bitstream 中，BD ILA 使用 PS `FCLK_CLK0` 采样，与 RX demod 同域；J11 管脚仍建议同时观察实时 bit/lock。
 - 当前“ADC->AXI->DDR”链路仍保留，在线解调支路不替代原始采样搬运。
@@ -193,16 +195,20 @@
 - 生成 external RX 上板 bitstream（自动切 `FIXED_TX_EN=0/FIXED_RX_EN=1` 并复制 `.bit/.ltx` 到 `artifacts/external_rx/`）：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_external_rx_bitstream.tcl`
   - 可追加 `-tclargs loopback` 或 `-tclargs loopback_prbs` 生成对应本地回环镜像，产物分别输出到 `artifacts/loopback/` 或 `artifacts/loopback_prbs/`。
-- 生成第二块 Zynq 板 TX-only bitstream（使用用户提供的高频 DAC/ADC 引脚 profile）：
-  - PRBS 随机符号源，推荐用于两板真实链路压力测试：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_second_board_tx_bitstream.tcl -tclargs prbs`
-  - 固定 Gray 循环源，适合最初对线和波形确认：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_second_board_tx_bitstream.tcl -tclargs gray`
-  - 产物分别输出到 `artifacts/second_board_tx_prbs/` 或 `artifacts/second_board_tx_gray/`。
+- 生成原 AX7020 风格接口 TX-only bitstream：
+  - PRBS 随机符号源，推荐用于两板真实链路压力测试：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_original_interface_tx_bitstream.tcl -tclargs prbs`
+  - 固定 Gray 循环源，适合最初对线和波形确认：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_original_interface_tx_bitstream.tcl -tclargs gray`
+  - 产物分别输出到 `artifacts/original_tx_prbs/` 或 `artifacts/original_tx_gray/`。
+- 生成新 HS 接口 RX bitstream：
+  - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_new_interface_rx_bitstream.tcl`
+  - 产物输出到 `artifacts/new_interface_rx/`。
+  - 2026-06-11 已验证：`original_tx_prbs` timing 为 setup `0.326 ns` / hold `0.055 ns`；`new_interface_rx` timing 为 setup `0.065 ns` / hold `0.043 ns`。
 - 烧录 external RX 上板 bitstream 并绑定 ILA probes：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_external_rx_bitstream.tcl`
 - 通用 bitstream 烧录入口，支持两块 JTAG 板时选择 target/device：
   - 列出目标：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -list`
-  - 烧第二板 TX：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts\second_board_tx_prbs\Ez_QPSK_second_board_tx_prbs.bit -ltx artifacts\second_board_tx_prbs\Ez_QPSK_second_board_tx_prbs.ltx -target <tx_target>`
-  - 烧当前板 RX：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts\external_rx\Ez_QPSK_external_rx.bit -ltx artifacts\external_rx\Ez_QPSK_external_rx.ltx -target <rx_target>`
+  - 烧原接口 TX：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts\original_tx_prbs\Ez_QPSK_original_tx_prbs.bit -ltx artifacts\original_tx_prbs\Ez_QPSK_original_tx_prbs.ltx -target <tx_target>`
+  - 烧新接口 RX：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts\new_interface_rx\Ez_QPSK_new_interface_rx.bit -ltx artifacts\new_interface_rx\Ez_QPSK_new_interface_rx.ltx -target <rx_target>`
 - 初始化指定板子的 PS/FCLK：
   - 列出 XSCT targets：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -list`
   - 初始化某块板：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <xsct_target_id_or_name_pattern>`
@@ -213,7 +219,7 @@
   - 若刚烧录后需要等待锁定或想提高命中率，可用 `-warmup-ms 500 -repeat 3` 连抓多份，输出文件会加 `_00/_01/_02` 后缀。
 - 一键 external RX 板级检查（默认烧录 `external_rx`，抓三次 ILA，并逐份运行 `--check-external-rx`）：
   - `powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1`
-  - 两块 JTAG 板同时连接时，加 `-Target <rx_target>` / `-Device <rx_device>` / `-Ila <rx_ila>` 指定接收板。
+  - 两块 JTAG 板同时连接时，新接口接收板使用：`powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode new_interface_rx -Target <rx_target> -Device <rx_device> -Ila <rx_ila>`
   - 外部源物理输入预检可用：`powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -SignalOnly -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5`
   - 等待外部源出现并自动进入完整检查可用：`powershell -ExecutionPolicy Bypass -File scripts/wait_external_rx_signal.ps1 -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5`
   - 本地随机模拟回环 smoke 可用：`powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode loopback_prbs`

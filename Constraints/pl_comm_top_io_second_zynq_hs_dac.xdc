@@ -18,7 +18,7 @@
 #
 # NOTE:
 # - IOSTANDARD is set to LVCMOS33 to match the current AX7020 constraints.
-#   Confirm the second board bank-35 VCCO before using the image on hardware.
+#   Confirm the new-interface board bank-35 VCCO before using the image on hardware.
 # - clk_dac is the forwarded 100 MHz sample clock from PS FCLK0/clk_io.
 # ------------------------------------------------------------------------------
 

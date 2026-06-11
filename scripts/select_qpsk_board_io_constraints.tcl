@@ -3,10 +3,10 @@
 #
 # Profiles:
 #   ax7020      : current AX7020 ADC/DAC mezzanine mapping.
-#   second_zynq : user-provided second Zynq high-speed ADC/DAC mapping.
+#   second_zynq : user-provided new high-speed ADC/DAC mapping.
 #
 # This helper only switches the ADC/DAC XDCs. The current sys_clk and J11 debug
-# constraints remain separate because the second board's non-HS pins have not
+# constraints remain separate because the new board's non-HS pins have not
 # been provided yet.
 
 proc qpsk_constraint_file_obj {fileset_name file_path} {
