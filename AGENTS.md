@@ -93,6 +93,9 @@ For future automated work, run Vivado batch commands with escalation if the same
 ```
 
 - Run this after programming PL, or run an equivalent FSBL/application flow, before trying to refresh Vivado ILA/debug hub. If PS `FCLK_CLK0` is not active, Vivado can program the FPGA but may report that the design has no supported debug core or that `dbg_hub` is not detected.
+- With two Zynq boards on JTAG, first run `scripts/init_ps7_fclk.tcl -list`,
+  then pass `-target <xsct_target_id_or_name_pattern>` so PS/FCLK is
+  initialized on the intended TX or RX board.
 - After a PL milestone that affects the exported hardware, refresh the PS-side hardware platform:
   1. Set the intended board mode. For local analog loopback, use `loopback` (`FIXED_TX_EN=1`, `FIXED_RX_EN=1`, Gray TX). For local PRBS stress testing, use `loopback_prbs` (`FIXED_TX_EN=1`, `FIXED_RX_EN=1`, PRBS7 TX). For a purely external ADC source, use `external_rx` (`FIXED_TX_EN=0`, `FIXED_RX_EN=1`).
   2. Generate the matching bitstream when the PL image changed.
@@ -137,6 +140,7 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1
 ```powershell
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -list
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts/second_board_tx_prbs/Ez_QPSK_second_board_tx_prbs.bit -ltx artifacts/second_board_tx_prbs/Ez_QPSK_second_board_tx_prbs.ltx -target <tx_target>
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <tx_ps_target>
 powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Target <rx_target> -SignalOnly
 ```
 - The preferred two-board flow is:

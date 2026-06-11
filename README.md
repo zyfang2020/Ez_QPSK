@@ -76,6 +76,7 @@
 - 当前 BD 中，主链路时钟由 PS `FCLK_CLK0` 提供，并同时连接到 `clk_axi` 和 `clk_io`。
 - `pl_comm_top` 内部把 `clk_io` 直接转发为板外 `clk_adc` / `clk_dac`。
 - `clk_50M` 是 AX7020 板载 PL 时钟输入；当前 BD 中保留为外部端口，不作为主 QPSK 采样链路的时钟源。external RX bitstream 中，BD ILA 已切到 PS `FCLK_CLK0`，与 `clk_io`/RX demod 同域采样。
+- 两块 Zynq 板同时接 JTAG 时，PS/FCLK 初始化也要选对目标；`scripts/init_ps7_fclk.tcl` 支持 `-list` 和 `-target <xsct_target_id_or_name_pattern>`。
 - PS/BD 相关时钟连接由 Vivado 工程重建脚本中的 BD 定义恢复。
 
 ### 2.3 顶层与模式说明
@@ -202,6 +203,9 @@
   - 列出目标：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -list`
   - 烧第二板 TX：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts\second_board_tx_prbs\Ez_QPSK_second_board_tx_prbs.bit -ltx artifacts\second_board_tx_prbs\Ez_QPSK_second_board_tx_prbs.ltx -target <tx_target>`
   - 烧当前板 RX：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts\external_rx\Ez_QPSK_external_rx.bit -ltx artifacts\external_rx\Ez_QPSK_external_rx.ltx -target <rx_target>`
+- 初始化指定板子的 PS/FCLK：
+  - 列出 XSCT targets：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -list`
+  - 初始化某块板：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <xsct_target_id_or_name_pattern>`
 - 列出 Hardware Manager 可见的 JTAG target/device/ILA（上板前预检）：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/capture_external_rx_ila.tcl -tclargs -list`
 - 抓取 external RX ILA CSV（可加 `-program` 先烧录）：
