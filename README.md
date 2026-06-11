@@ -36,6 +36,7 @@
 - 已完成：新增 external RX ILA 抓取脚本，可连接 Hardware Manager、可选烧录 external RX bitstream，并把 ILA 数据导出为 CSV。
 - 已完成：新增 external RX ILA CSV 解码工具，可从 Hardware Manager 导出的 `probe2` 数据中解出 lock ratio、lock score、I/Q、timing phase、NCO 频偏校正、ADC 频谱粗估和符号统计，并可对 NCO 频偏方向/幅度设置附加检查。
 - 已完成：新增 external RX 一键板级检查脚本，可串联烧录、ILA 抓取和 `--check-external-rx` 解码阈值检查；真实外部源调试时可先用 `-SignalOnly` 只验 ADC 输入动态范围/频谱能量，再追加 `-ExpectNcoSign/-MinNcoAbs/-MaxNcoAbs` 验证残余载波方向和范围，并自动输出多次抓取的聚合摘要。
+- 已完成：新增 external RX 等待脚本，可反复运行 ADC `-SignalOnly` 预检，检测到外部输入后自动进入完整 lock/valid/NCO 检查，适合边调外部源边等待上板 PASS。
 - 已完成：新增本地 `loopback_prbs` 上板模式，可把内部 QPSK TX 从固定 Gray 循环切到 PRBS7 符号流，用于观察非周期符号工况下的 ADC 幅度、I/Q 活动和硬判决分布。
 - 已完成：`loopback_prbs` 本地模拟回环上板验证通过。当前路径为 `PL TX -> DAC -> 外部滤波/放大链路 -> ADC -> PL RX demod`，最新版 ILA 三次抓取均通过 `--check-external-rx`。
 - 已完成：刷新 `external_rx` 带 bitstream XSA 并通过 Vitis smoke build，可用于更新/重导入 PS 侧软件工程；最新 smoke 工作区为 `Vitis_WS/codex_xsa_smoke_external_rx_wide_acq`。
@@ -194,6 +195,7 @@
 - 一键 external RX 板级检查（默认烧录 `external_rx`，抓三次 ILA，并逐份运行 `--check-external-rx`）：
   - `powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1`
   - 外部源物理输入预检可用：`powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -SignalOnly -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5`
+  - 等待外部源出现并自动进入完整检查可用：`powershell -ExecutionPolicy Bypass -File scripts/wait_external_rx_signal.ps1 -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5`
   - 本地随机模拟回环 smoke 可用：`powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode loopback_prbs`
   - 若外部源相对本地 `7 MHz` NCO 有已知正/负残余频偏，可追加例如 `-ExpectNcoSign positive -MinNcoAbs 96 -MaxNcoAbs 8192`；本地同钟回环的 NCO correction 可能为 0，不建议默认加这个约束。
   - 脚本会为每份 CSV 写 `*_summary.json`，完整检查默认写 `Tool\data\<mode>_board_check_aggregate_summary.json`，`-SignalOnly` 默认写 `Tool\data\<mode>_signal_check_aggregate_summary.json`，聚合显示多次抓取的 lock ratio、valid ratio、ADC span、ADC 频谱峰值、7 MHz 附近带内能量占比、I/Q RMS 和 locked NCO correction 的 min/avg/max。可用 `-AggregateSummaryJson path\to\summary.json` 改输出位置。
@@ -287,7 +289,7 @@
 ### 3.6 当前阶段下一步（对齐阶段 2）
 
 1. 本地模拟回环 `loopback_prbs` 已通过，`external_rx` 最新 bitstream/XSA/Vitis smoke 也已就绪；下一步先把独立外部 QPSK 源真正送入 ADC，再用 J11 `rx_demod_bit/rx_demod_lock` 和 ILA 做可观测验证。
-2. 接入外部源后优先运行 `scripts/check_external_rx_board.ps1 -SignalOnly` 做输入预检；第一关先看 ADC span 是否明显大于几十个 LSB，并看三次抓取是否稳定。第二关看 `adc_spectrum_peak_hz` 和 `adc_spectrum_band_power_ratio` 是否说明能量在预期载波附近。若 ADC span 仍只有个位数，先查外部源、模拟链路、ADC 输入偏置/供电和连接。
+2. 接入外部源后优先运行 `scripts/check_external_rx_board.ps1 -SignalOnly` 做输入预检，或者用 `scripts/wait_external_rx_signal.ps1 -RunFullCheck` 让脚本轮询等待信号出现后自动进入完整检查；第一关先看 ADC span 是否明显大于几十个 LSB，并看三次抓取是否稳定。第二关看 `adc_spectrum_peak_hz` 和 `adc_spectrum_band_power_ratio` 是否说明能量在预期载波附近。若 ADC span 仍只有个位数，先查外部源、模拟链路、ADC 输入偏置/供电和连接。
 3. 若 ADC span 正常，再运行不带 `-SignalOnly` 的完整 external-RX 检查，观察 lock ratio、lock score、I/Q 幅度、timing phase 和 `nco_freq_corr` Hz 换算值；已知外部源频偏方向时可用 `-ExpectNcoSign` 或 `--expect-nco-sign` 把 NCO 方向纳入 PASS/FAIL；若外部源发 Gray 循环，则追加 `--check-gray-cycle` 做更接近验收的符号序列检查。
 4. 外部信号建议先从约 `7 MHz` 载波、`2 Msym/s`、中等 ADC 幅度开始；若 `rx_demod_lock` 不稳定，优先同时抓取 ADC 原始样本做离线频谱/星座交叉验证。
 5. 针对真实外部 QPSK 输入继续强化锁前宽频偏捕获、误码统计和 ILA/离线交叉验证；当前锁后 Costas-like PI 和候选质量评分已通过 demod 单元与顶层 external-RX 的 `+15 kHz/-15 kHz`、`+35 kHz/-35 kHz` 回归，以及锁后正/负向漂移仿真回归，但不能替代完整外部同步链。

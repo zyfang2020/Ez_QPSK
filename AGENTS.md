@@ -116,6 +116,12 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1
 - By default it programs `artifacts/external_rx/Ez_QPSK_external_rx.bit`, captures three ILA CSV files, and runs `Tool/python/decode_rx_demod_ila.py --check-external-rx` on each.
 - For local analog PRBS loopback smoke, use `-Mode loopback_prbs`.
 - Use `-SignalOnly` as the first real external-source preflight when the physical input path is uncertain. It skips lock/valid requirements and defaults to `MinAdcSpan=16`, so it answers only whether the ADC sees enough input activity before demod lock is expected.
+- `scripts/wait_external_rx_signal.ps1` can poll the `-SignalOnly` preflight and, with `-RunFullCheck`, automatically run the full external-RX check once ADC input activity passes. Use it while adjusting an external QPSK source:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/wait_external_rx_signal.ps1 -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5
+```
+
 - The board check writes per-capture `*_summary.json` files and a multi-capture aggregate JSON. Full checks default to `Tool/data/<mode>_board_check_aggregate_summary.json`; `-SignalOnly` checks default to `Tool/data/<mode>_signal_check_aggregate_summary.json`; override with `-AggregateSummaryJson`.
 - The decoder and board check now include coarse ADC spectral diagnostics. Defaults are centered at `7 MHz` with `4 MHz` width; override with Python `--adc-band-center-hz/--adc-band-width-hz` or PowerShell `-AdcBandCenterHz/-AdcBandWidthHz`.
 - Optional ADC spectral gates are available for real external-source checks:
@@ -231,6 +237,10 @@ Hardware result on 2026-06-10:
 - `scripts/check_external_rx_board.ps1 -SignalOnly` was added and verified with existing CSVs:
   - external noise capture fails only the input-presence gate: `adc_raw_span 2 < 16`
   - loopback PRBS capture passes signal-only spectral gates
+- `scripts/wait_external_rx_signal.ps1` was added and verified:
+  - `-DryRun -MaxAttempts 1 -RunFullCheck` prints the expected signal-only then full-check commands without capturing hardware
+  - existing external noise CSV fails the wait at signal preflight
+  - existing loopback PRBS CSV passes signal preflight and, with `-RunFullCheck`, passes the full demod check
 - `scripts/init_ps7_fclk.tcl` reported no APU/Cortex-A9 target during this run (`AHB AP transaction error`), but Vivado still captured ILA successfully, so the active FCLK/debug path was sufficient for the capture. If this repeats after a board reset, check PS power/reset/boot mode before relying on XSCT PS initialization.
 
 ## Simulation Status

@@ -39,6 +39,14 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Si
 
 `-SignalOnly` 不要求 demod lock，默认只加 `adc_raw_span >= 16`，可再叠加 ADC RMS、频谱峰值和带内能量门槛。第二阶段再去掉 `-SignalOnly`，运行完整 `--check-external-rx` lock/valid 检查；已知残余载波方向时可加 `-ExpectNcoSign positive|negative`。
 
+如果正在边接线边调外部源，可用等待脚本轮询第一阶段，信号出现后自动跑完整检查：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/wait_external_rx_signal.ps1 -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5
+```
+
+`-MaxAttempts 0` 表示一直等；加 `-MaxAttempts 10 -IntervalSeconds 2` 可以限制等待次数。默认第一次会烧录对应模式，后续轮询和完整检查使用 `-NoProgram`，避免反复重烧。
+
 如果外部源发的是本项目固定 Gray 循环 `00 -> 01 -> 11 -> 10`，可追加：
 
 ```powershell
