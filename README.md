@@ -71,6 +71,8 @@
   - `Constraints/pl_comm_top_io_ax7020_adc.xdc`
   - `Constraints/pl_comm_top_io_ax7020_dac.xdc`
   - `Constraints/pl_comm_top_io_ax7020_j11_debug.xdc`
+  - `Constraints/pl_comm_top_io_second_zynq_hs_adc.xdc`
+  - `Constraints/pl_comm_top_io_second_zynq_hs_dac.xdc`
 - 当前 BD 中，主链路时钟由 PS `FCLK_CLK0` 提供，并同时连接到 `clk_axi` 和 `clk_io`。
 - `pl_comm_top` 内部把 `clk_io` 直接转发为板外 `clk_adc` / `clk_dac`。
 - `clk_50M` 是 AX7020 板载 PL 时钟输入；当前 BD 中保留为外部端口，不作为主 QPSK 采样链路的时钟源。external RX bitstream 中，BD ILA 已切到 PS `FCLK_CLK0`，与 `clk_io`/RX demod 同域采样。
@@ -88,6 +90,11 @@
   - 当前用于最小 bring-up：固定走 QPSK 内部测试发送路径。
   - 导出 `rx_demod_bit` 和 `rx_demod_lock` 两个板级 debug 输出；当前约束到 J11 PIN3/F17 与 J11 PIN4/F16。
   - 导出 `rx_demod_dbg_bus[95:0]` 给 BD 内现有 ILA 的 `probe2`，用于 external RX 上板时观察锁定质量、I/Q、定时相位和 NCO 频偏校正。
+- 第二块 Zynq 板 TX profile：
+  - 新增高频 DAC/ADC 引脚约束 profile，映射用户提供的 `HS_DA_*` / `HS_AD_*` 到现有 `clk_dac/dac_data` 与 `clk_adc/adc_data` 顶层端口。
+  - 不改 BD/PS 主结构；默认仍由 PS `FCLK_CLK0` 驱动 `clk_io`，再转发到 DAC/ADC。
+  - 推荐用 `second_board_tx_prbs` 作为独立外部发射源，当前板使用 `external_rx` 作为接收端，组成“第二板 TX -> 信道 -> 当前板 ADC/RX demod”的两板链路。
+  - 当前只确认了高频 ADC/DAC 引脚；第二板的非 HS `clk_50M` / debug 管脚尚未单独确认。实物下载前请确认 Bank 35 VCCO 与 `LVCMOS33` 匹配。
 
 ### 2.4 目录与文件作用（按工程根目录）
 
@@ -185,8 +192,16 @@
 - 生成 external RX 上板 bitstream（自动切 `FIXED_TX_EN=0/FIXED_RX_EN=1` 并复制 `.bit/.ltx` 到 `artifacts/external_rx/`）：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_external_rx_bitstream.tcl`
   - 可追加 `-tclargs loopback` 或 `-tclargs loopback_prbs` 生成对应本地回环镜像，产物分别输出到 `artifacts/loopback/` 或 `artifacts/loopback_prbs/`。
+- 生成第二块 Zynq 板 TX-only bitstream（使用用户提供的高频 DAC/ADC 引脚 profile）：
+  - PRBS 随机符号源，推荐用于两板真实链路压力测试：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_second_board_tx_bitstream.tcl -tclargs prbs`
+  - 固定 Gray 循环源，适合最初对线和波形确认：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_second_board_tx_bitstream.tcl -tclargs gray`
+  - 产物分别输出到 `artifacts/second_board_tx_prbs/` 或 `artifacts/second_board_tx_gray/`。
 - 烧录 external RX 上板 bitstream 并绑定 ILA probes：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_external_rx_bitstream.tcl`
+- 通用 bitstream 烧录入口，支持两块 JTAG 板时选择 target/device：
+  - 列出目标：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -list`
+  - 烧第二板 TX：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts\second_board_tx_prbs\Ez_QPSK_second_board_tx_prbs.bit -ltx artifacts\second_board_tx_prbs\Ez_QPSK_second_board_tx_prbs.ltx -target <tx_target>`
+  - 烧当前板 RX：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts\external_rx\Ez_QPSK_external_rx.bit -ltx artifacts\external_rx\Ez_QPSK_external_rx.ltx -target <rx_target>`
 - 列出 Hardware Manager 可见的 JTAG target/device/ILA（上板前预检）：
   - `& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/capture_external_rx_ila.tcl -tclargs -list`
 - 抓取 external RX ILA CSV（可加 `-program` 先烧录）：
@@ -194,6 +209,7 @@
   - 若刚烧录后需要等待锁定或想提高命中率，可用 `-warmup-ms 500 -repeat 3` 连抓多份，输出文件会加 `_00/_01/_02` 后缀。
 - 一键 external RX 板级检查（默认烧录 `external_rx`，抓三次 ILA，并逐份运行 `--check-external-rx`）：
   - `powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1`
+  - 两块 JTAG 板同时连接时，加 `-Target <rx_target>` / `-Device <rx_device>` / `-Ila <rx_ila>` 指定接收板。
   - 外部源物理输入预检可用：`powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -SignalOnly -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5`
   - 等待外部源出现并自动进入完整检查可用：`powershell -ExecutionPolicy Bypass -File scripts/wait_external_rx_signal.ps1 -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5`
   - 本地随机模拟回环 smoke 可用：`powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode loopback_prbs`

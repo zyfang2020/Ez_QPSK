@@ -115,6 +115,36 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1
 
 - By default it programs `artifacts/external_rx/Ez_QPSK_external_rx.bit`, captures three ILA CSV files, and runs `Tool/python/decode_rx_demod_ila.py --check-external-rx` on each.
 - For local analog PRBS loopback smoke, use `-Mode loopback_prbs`.
+- For two-board external-link bring-up, a second-Zynq TX-only profile is available.
+  It uses the user-provided high-speed ADC/DAC package pins and keeps the main
+  BD/PS structure unchanged. Build the TX image with:
+
+```powershell
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_second_board_tx_bitstream.tcl -tclargs prbs
+```
+
+- The second-board profile switches only ADC/DAC IO constraints:
+  - `Constraints/pl_comm_top_io_second_zynq_hs_dac.xdc`
+  - `Constraints/pl_comm_top_io_second_zynq_hs_adc.xdc`
+  The current `sys_clk_ax7020.xdc` and J11 debug constraints remain as project
+  placeholders until the second board's non-HS clock/reset/debug pins are
+  confirmed. Confirm bank-35 VCCO is compatible with `LVCMOS33` before hardware
+  use.
+- With two JTAG boards connected, do not rely on the default first target.
+  Use the list mode first, then pass `-target` / `-device` to programming or
+  capture scripts:
+
+```powershell
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -list
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts/second_board_tx_prbs/Ez_QPSK_second_board_tx_prbs.bit -ltx artifacts/second_board_tx_prbs/Ez_QPSK_second_board_tx_prbs.ltx -target <tx_target>
+powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Target <rx_target> -SignalOnly
+```
+- The preferred two-board flow is:
+  1. Program the current AX7020-style board with `external_rx`.
+  2. Program the second board with `second_board_tx_prbs`.
+  3. Connect second-board DAC/channel output into the current board ADC path.
+  4. Run `check_external_rx_board.ps1 -SignalOnly` on the RX board first, then
+     run the full external-RX check once ADC activity is present.
 - Use `-SignalOnly` as the first real external-source preflight when the physical input path is uncertain. It skips lock/valid requirements and defaults to `MinAdcSpan=16`, so it answers only whether the ADC sees enough input activity before demod lock is expected.
 - `scripts/wait_external_rx_signal.ps1` can poll the `-SignalOnly` preflight and, with `-RunFullCheck`, automatically run the full external-RX check once ADC input activity passes. Use it while adjusting an external QPSK source:
 
@@ -140,6 +170,9 @@ powershell -ExecutionPolicy Bypass -File scripts/wait_external_rx_signal.ps1 -Ru
 - This requires both DA and AD paths to be working and uses `loopback` mode with TX and RX enabled.
 - Use `loopback_prbs` as the preferred random-symbol stress mode after Gray loopback. Current hardware evidence shows stable PRBS lock on the local analog path.
 - After local analog loopback is stable, switch to `external_rx` mode for a separate external QPSK transmitter feeding the ADC.
+- The separate external transmitter can now be the second Zynq board in TX-only
+  PRBS or Gray mode. Use PRBS first for realistic random-symbol stress after
+  basic signal presence is confirmed.
 
 Hardware result on 2026-06-10:
 

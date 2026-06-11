@@ -6,6 +6,7 @@
 set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir ".."]]
 set xpr_path   [file join $repo_root "Ez_QPSK.xpr"]
+set board_io_helper [file join $script_dir "select_qpsk_board_io_constraints.tcl"]
 
 proc add_file_if_missing {fileset_name file_path} {
     set fs [get_filesets $fileset_name]
@@ -19,6 +20,11 @@ if {![file exists $xpr_path]} {
     puts "ERROR: project not found: $xpr_path"
     exit 1
 }
+if {![file exists $board_io_helper]} {
+    puts "ERROR: board IO constraint helper not found: $board_io_helper"
+    exit 1
+}
+source $board_io_helper
 
 open_project $xpr_path
 
@@ -34,6 +40,7 @@ if {[llength [get_runs impl_1]] == 0} {
 }
 
 add_file_if_missing sources_1 [file join $repo_root "RTL" "modem" "qpsk_rx_fixed_demod.v"]
+qpsk_select_board_io_constraints $repo_root "ax7020"
 update_compile_order -fileset sources_1
 
 reset_run synth_1

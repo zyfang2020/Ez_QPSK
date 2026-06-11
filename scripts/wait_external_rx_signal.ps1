@@ -20,6 +20,9 @@ param(
     [int]$FullRepeat = 3,
     [int]$WarmupMs = 500,
     [int]$GapMs = 50,
+    [string]$Target = "",
+    [string]$Device = "",
+    [string]$Ila = "",
 
     [switch]$RunFullCheck,
     [switch]$NoProgram,
@@ -108,6 +111,15 @@ function Add-CommonArgs {
     }
     if ($DryRun) {
         $out += "-DryRun"
+    }
+    if ($Target -ne "") {
+        $out += @("-Target", $Target)
+    }
+    if ($Device -ne "") {
+        $out += @("-Device", $Device)
+    }
+    if ($Ila -ne "") {
+        $out += @("-Ila", $Ila)
     }
     if ($ExistingCsv.Count -gt 0) {
         $out += "-ExistingCsv"

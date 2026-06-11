@@ -6,6 +6,9 @@
 #   vivado -mode batch -source scripts/program_external_rx_bitstream.tcl \
 #       -tclargs artifacts/external_rx/Ez_QPSK_external_rx.bit \
 #                artifacts/external_rx/Ez_QPSK_external_rx.ltx
+#
+# With multiple JTAG boards connected, prefer scripts/program_bitstream.tcl and
+# pass -target/-device explicitly.
 
 set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir ".."]]

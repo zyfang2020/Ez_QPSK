@@ -28,6 +28,9 @@ param(
     [int]$GapMs = 50,
     [string]$Out = "",
     [string]$AggregateSummaryJson = "",
+    [string]$Target = "",
+    [string]$Device = "",
+    [string]$Ila = "",
 
     [switch]$NoProgram,
     [switch]$CheckGrayCycle,
@@ -224,6 +227,15 @@ if ($ExistingCsv.Count -gt 0) {
     )
     if (!$NoProgram) {
         $captureArgs = @("-program") + $captureArgs
+    }
+    if ($Target -ne "") {
+        $captureArgs += @("-target", $Target)
+    }
+    if ($Device -ne "") {
+        $captureArgs += @("-device", $Device)
+    }
+    if ($Ila -ne "") {
+        $captureArgs += @("-ila", $Ila)
     }
 
     $vivadoArgs = @("-mode", "batch", "-source", $CaptureTcl, "-tclargs") + $captureArgs
