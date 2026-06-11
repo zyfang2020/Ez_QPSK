@@ -115,7 +115,8 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1
 
 - By default it programs `artifacts/external_rx/Ez_QPSK_external_rx.bit`, captures three ILA CSV files, and runs `Tool/python/decode_rx_demod_ila.py --check-external-rx` on each.
 - For local analog PRBS loopback smoke, use `-Mode loopback_prbs`.
-- The board check writes per-capture `*_summary.json` files and a multi-capture aggregate JSON, defaulting to `Tool/data/<mode>_board_check_aggregate_summary.json`; override with `-AggregateSummaryJson`.
+- Use `-SignalOnly` as the first real external-source preflight when the physical input path is uncertain. It skips lock/valid requirements and defaults to `MinAdcSpan=16`, so it answers only whether the ADC sees enough input activity before demod lock is expected.
+- The board check writes per-capture `*_summary.json` files and a multi-capture aggregate JSON. Full checks default to `Tool/data/<mode>_board_check_aggregate_summary.json`; `-SignalOnly` checks default to `Tool/data/<mode>_signal_check_aggregate_summary.json`; override with `-AggregateSummaryJson`.
 - The decoder and board check now include coarse ADC spectral diagnostics. Defaults are centered at `7 MHz` with `4 MHz` width; override with Python `--adc-band-center-hz/--adc-band-width-hz` or PowerShell `-AdcBandCenterHz/-AdcBandWidthHz`.
 - Optional ADC spectral gates are available for real external-source checks:
   - PowerShell: `-MinAdcAcRms <lsb> -MinAdcBandPowerRatio <ratio> -MinAdcPeakHz <hz> -MaxAdcPeakHz <hz>`
@@ -215,6 +216,21 @@ Hardware result on 2026-06-10:
   - `lock_ratio=0`
   - check failures: `lock_ratio 0 < 0.5`, `adc_raw_span 3 < 16`
   - This confirms the current blocker for true `external_rx` validation is missing/insufficient independent ADC input signal, not the capture/decode flow.
+- Re-run on 2026-06-11 with `scripts/check_external_rx_board.ps1 -Repeat 1 -WarmupMs 500` still captured/programmed correctly but showed the same external input issue:
+  - `Tool/data/external_rx_board_check.csv`
+  - `adc_raw_span=2`, `adc_ac_rms=0.548365`
+  - `lock_ratio=0`, `valid_count=21`, valid symbols stayed at `3`
+  - check failures: `lock_ratio 0 < 0.5`, `adc_raw_span 2 < 16`
+- Same-board local analog PRBS contrast check on 2026-06-11 passed:
+  - `scripts/check_external_rx_board.ps1 -Mode loopback_prbs -Repeat 1 -WarmupMs 500 -MinAdcAcRms 100 -MinAdcBandPowerRatio 0.8 -MinAdcPeakHz 6000000 -MaxAdcPeakHz 8000000`
+  - `Tool/data/loopback_prbs_board_check.csv`
+  - `lock_ratio=1`, `lock_score=255`, `valid_count=20`
+  - `adc_raw_span=887`, `adc_ac_rms=236.996`
+  - `adc_spectrum_peak_hz=7.61719 MHz`, `adc_spectrum_band_power_ratio=0.986951`
+  - This confirms JTAG, ILA, PS-clocked PL, ADC/DAC local analog path, and RX demod are healthy; true external-RX validation is still waiting on sufficient independent ADC input.
+- `scripts/check_external_rx_board.ps1 -SignalOnly` was added and verified with existing CSVs:
+  - external noise capture fails only the input-presence gate: `adc_raw_span 2 < 16`
+  - loopback PRBS capture passes signal-only spectral gates
 - `scripts/init_ps7_fclk.tcl` reported no APU/Cortex-A9 target during this run (`AHB AP transaction error`), but Vivado still captured ILA successfully, so the active FCLK/debug path was sufficient for the capture. If this repeats after a board reset, check PS power/reset/boot mode before relying on XSCT PS initialization.
 
 ## Simulation Status

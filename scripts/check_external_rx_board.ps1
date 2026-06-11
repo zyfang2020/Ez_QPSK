@@ -9,6 +9,9 @@
 # External source with known positive residual carrier offset:
 #   powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -ExpectNcoSign positive -MinNcoAbs 96 -MaxNcoAbs 8192
 #
+# External source input-presence preflight, before expecting demod lock:
+#   powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -SignalOnly -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5
+#
 # The script writes per-capture summary JSON files and an aggregate summary JSON
 # with min/avg/max values across repeated captures.
 
@@ -28,6 +31,7 @@ param(
 
     [switch]$NoProgram,
     [switch]$CheckGrayCycle,
+    [switch]$SignalOnly,
     [switch]$WriteDecodedCsv,
     [switch]$DryRun,
 
@@ -151,21 +155,25 @@ if ($WarmupMs -lt 0) {
 if ($GapMs -lt 0) {
     throw "-GapMs must be nonnegative."
 }
+if ($SignalOnly -and ($MinAdcSpan -lt 0)) {
+    $MinAdcSpan = 16
+}
 
 $ScriptDir = Split-Path -Parent $PSCommandPath
 $RepoRoot = Split-Path -Parent $ScriptDir
 $CaptureTcl = Join-Path $ScriptDir "capture_external_rx_ila.tcl"
 $DecodePy = Join-Path $RepoRoot "Tool\python\decode_rx_demod_ila.py"
 $ToolDataDir = Join-Path $RepoRoot "Tool\data"
+$CheckStem = if ($SignalOnly) { "{0}_signal_check" -f $Mode } else { "{0}_board_check" -f $Mode }
 
 if ($Out -eq "") {
-    $Out = Join-Path $ToolDataDir ("{0}_board_check.csv" -f $Mode)
+    $Out = Join-Path $ToolDataDir ("{0}.csv" -f $CheckStem)
 } else {
     $Out = Resolve-RepoPath $Out
 }
 
 if ($AggregateSummaryJson -eq "") {
-    $AggregateSummaryJson = Join-Path $ToolDataDir ("{0}_board_check_aggregate_summary.json" -f $Mode)
+    $AggregateSummaryJson = Join-Path $ToolDataDir ("{0}_aggregate_summary.json" -f $CheckStem)
 } else {
     $AggregateSummaryJson = Resolve-RepoPath $AggregateSummaryJson
 }
@@ -228,9 +236,11 @@ foreach ($csv in $CsvFiles) {
     $decodeArgs = @(
         $DecodePy,
         $csv,
-        "--summary-json", $summaryJson,
-        "--check-external-rx"
+        "--summary-json", $summaryJson
     )
+    if (!$SignalOnly) {
+        $decodeArgs += "--check-external-rx"
+    }
     if ($CheckGrayCycle) {
         $decodeArgs += "--check-gray-cycle"
     }
@@ -326,6 +336,7 @@ foreach ($result in $CaptureResults) {
 if ($Summaries.Count -gt 0) {
     $Aggregate = [ordered]@{
         mode = $Mode
+        signal_only = [bool]$SignalOnly
         captures = $Summaries.Count
         pass_count = $passCount
         fail_count = $failCount
@@ -379,9 +390,17 @@ if ($Summaries.Count -gt 0) {
 }
 
 if ($failCount -ne 0) {
-    Write-Host "ERROR: $failCount capture(s) failed external RX checks."
+    if ($SignalOnly) {
+        Write-Host "ERROR: $failCount capture(s) failed ADC signal-only checks."
+    } else {
+        Write-Host "ERROR: $failCount capture(s) failed external RX checks."
+    }
     exit 2
 }
 
-Write-Host "INFO: external RX board check passed."
+if ($SignalOnly) {
+    Write-Host "INFO: ADC signal-only board check passed."
+} else {
+    Write-Host "INFO: external RX board check passed."
+}
 exit 0

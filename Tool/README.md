@@ -31,6 +31,14 @@ python Tool/python/decode_rx_demod_ila.py path\to\ila_export.csv --sample-rate-h
 
 外部输入第一轮验收可加 `--check-external-rx`，默认检查 `lock_ratio >= 0.50`、`valid_ratio >= 0.005`、`adc_raw_span >= 16`，失败时返回非零，便于把 ILA 抓取结果接入批处理脚本。
 
+实际上板时更推荐先用一键脚本做两阶段检查。第一阶段只确认外部源是否真的进入 ADC：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -SignalOnly -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5
+```
+
+`-SignalOnly` 不要求 demod lock，默认只加 `adc_raw_span >= 16`，可再叠加 ADC RMS、频谱峰值和带内能量门槛。第二阶段再去掉 `-SignalOnly`，运行完整 `--check-external-rx` lock/valid 检查；已知残余载波方向时可加 `-ExpectNcoSign positive|negative`。
+
 如果外部源发的是本项目固定 Gray 循环 `00 -> 01 -> 11 -> 10`，可追加：
 
 ```powershell
