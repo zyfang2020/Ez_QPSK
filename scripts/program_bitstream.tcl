@@ -9,6 +9,9 @@
 #       -bit artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit \
 #       -target 1
 #   vivado -mode batch -source scripts/program_bitstream.tcl -tclargs -list
+#
+# For more detailed, read-only board identification, use:
+#   vivado -mode batch -source scripts/list_hw_targets.tcl
 
 set bit_path ""
 set ltx_path ""

@@ -145,6 +145,7 @@ Build the new-interface RX image with:
   capture scripts:
 
 ```powershell
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/list_hw_targets.tcl
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -list
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit -ltx artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.ltx -target <tx_target>
 & "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <tx_ps_target>
@@ -206,6 +207,16 @@ powershell -ExecutionPolicy Bypass -File scripts/wait_external_rx_signal.ps1 -Ru
     `localhost:3121/xilinx_tcf/Digilent/210512180081` / `xc7z020_1`.
     Do not assume TX/RX target identity until both cables are visible or one-at-a-time
     cable mapping is performed.
+- `scripts/list_hw_targets.tcl` was added as a read-only target identity helper.
+  Current 2026-06-11 observation with one cable connected:
+  - target: `localhost:3121/xilinx_tcf/Digilent/210512180081`
+  - devices: `arm_dap_0`, `xc7z020_1`
+  - `xc7z020_1` part: `xc7z020`
+  - `xc7z020_1` EFUSE DNA: `3A1691221322147B`
+  - Vivado reported DONE status `0` during that listing, so the FPGA was not
+    programmed at the time of enumeration.
+  Treat this as an identity fingerprint, not as TX/RX role proof until the
+  physical board is mapped.
 
 Hardware result on 2026-06-10:
 
