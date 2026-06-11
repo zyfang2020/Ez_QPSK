@@ -213,6 +213,7 @@
   - 烧新接口 RX：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts\new_interface_rx\Ez_QPSK_new_interface_rx.bit -ltx artifacts\new_interface_rx\Ez_QPSK_new_interface_rx.ltx -target <rx_target>`
   - 2026-06-11 单线观测到的 target 是 `localhost:3121/xilinx_tcf/Digilent/210512180081`，`xc7z020_1` 的 EFUSE DNA 为 `3A1691221322147B`；这只是身份指纹，需通过单板插拔或实物标签确认它对应原接口 TX 还是新接口 RX。
   - 2026-06-12 复查时 Vivado 仍只看到这一块 target，`xc7z020_1` 未烧录且 ILA count 为 `0`；XSCT `init_ps7_fclk.tcl -list` 提升权限后能启动但没有列出可初始化的 APU/Cortex-A9 target。因此当前不能自动跑两板烧录/检查流程，需要先让两块板同时可见，或用单板插拔确认这块 target 是否就是新接口 RX。
+  - 2026-06-12 已尝试把该 target 临时烧成 `new_interface_rx`：PL 下载成功并到 DONE，但 Hardware Manager 没检测到 `dbg_hub` / ILA，XSCT 仍没有 APU/Cortex-A9 target 可用于初始化 PS/FCLK，因此没有抓到 ADC 噪声 CSV。这个结果还不能确认 `210512180081` 是否就是新接口 RX 板，只能说明当前 PS/FCLK debug clock 路径未运行或 XSCT 不可达。
 - 初始化指定板子的 PS/FCLK：
   - 列出 XSCT targets：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -list`
   - 初始化某块板：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <xsct_target_id_or_name_pattern>`

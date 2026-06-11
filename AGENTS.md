@@ -249,6 +249,19 @@ powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1
   - Two-board programming/check flow was not run. Continue only after both JTAG
     boards are visible or after one-at-a-time mapping identifies this target as
     the intended RX board for a single-board RX input preflight.
+- 2026-06-12 single-target RX identity attempt:
+  - The visible target `localhost:3121/xilinx_tcf/Digilent/210512180081` was
+    temporarily programmed with
+    `artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.bit/.ltx`.
+  - Programming reached startup DONE (`End of startup status: HIGH`).
+  - Hardware Manager could not detect `dbg_hub` / ILA after programming:
+    ILA count stayed `0`.
+  - Elevated XSCT `scripts/init_ps7_fclk.tcl -list` still did not list an
+    APU/Cortex-A9 target, so PS/FCLK could not be initialized from this session.
+  - No ADC noise/signal CSV was captured. This attempt does not yet confirm
+    whether serial `210512180081` is the new-interface RX board; it only proves
+    the PL can be programmed and that the PS/FCLK debug clock path is not active
+    or not accessible through XSCT.
 
 Hardware result on 2026-06-10:
 
