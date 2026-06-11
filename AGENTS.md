@@ -233,6 +233,7 @@ Stage-2 RX demod status on 2026-06-10/11:
   - `locked_symbols=260`, `valid_symbols=7863`, `nco_corr=-2560`
 - The current blind-lock logic is intentionally conservative: it waits longer before blind acquisition, scans coarse NCO correction candidates, suppresses blind score accumulation immediately after phase-bin movement, avoids first-round lock on small coarse-frequency candidates, and requires transition quality before scoring acquisition candidates. This prevents the observed early false lock in random/PRBS tests while preserving the known Gray-cycle path.
 - Open carrier-recovery note: the latest fixed-frequency positive/negative PRBS simulations pass, but this is still not a full Costas/Gardner synchronizer. A future decision-directed carrier acquisition/Costas loop and stronger timing recovery should replace the current coarse acquisition path before claiming broad arbitrary external-transmitter tolerance.
+- Exploratory wide-offset note on 2026-06-11: pushing the current simplified blind acquisition toward `25..35 kHz` residual carrier offsets exposed false-candidate selection and timeout behavior. Do not treat this as a small threshold tweak; the next real upgrade should add a proper Costas/decision-directed frequency loop or non-data-aided frequency estimator, then reintroduce wider-offset simulations only when they pass.
 
 ## Suggested Goal-Mode Execution Plan
 
