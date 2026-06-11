@@ -11,6 +11,13 @@
 // -----------------------------------------------------------------------------
 module tb_qpsk_rx_demod_random_external;
 
+`ifdef QPSK_RX_RANDOM_DRIFT_NEG
+`define QPSK_RX_RANDOM_DRIFT_ENABLED
+`endif
+`ifdef QPSK_RX_RANDOM_DRIFT
+`define QPSK_RX_RANDOM_DRIFT_ENABLED
+`endif
+
 localparam integer ADC_DW = 10;
 localparam integer PHASE_W = 24;
 localparam integer SPS = 50;
@@ -19,7 +26,7 @@ localparam integer SYMBOL_MASK = MAX_SYMBOLS - 1;
 localparam integer CAL_SYMS = 32;
 localparam integer SEARCH_WIN = 6;
 localparam integer LOCK_SETTLE_SYMS = 64;
-`ifdef QPSK_RX_RANDOM_DRIFT
+`ifdef QPSK_RX_RANDOM_DRIFT_ENABLED
 localparam integer TARGET_LOCKED_SYMS = 3200;
 localparam integer MIN_NCO_CORR = 4500;
 `else
@@ -30,7 +37,10 @@ localparam [PHASE_W-1:0] RX_PHASE_INC = 24'h11EB85;
 
 localparam real FS_HZ = 100000000.0;
 localparam real CARRIER_HZ = 7000000.0;
-`ifdef QPSK_RX_RANDOM_DRIFT
+`ifdef QPSK_RX_RANDOM_DRIFT_NEG
+localparam real CARRIER_OFFSET_HZ = -15000.0;
+localparam integer EXPECT_NCO_SIGN = -1;
+`elsif QPSK_RX_RANDOM_DRIFT
 localparam real CARRIER_OFFSET_HZ = 15000.0;
 localparam integer EXPECT_NCO_SIGN = 1;
 `elsif QPSK_RX_RANDOM_WIDE_NEG
@@ -56,7 +66,11 @@ localparam integer ADC_NOISE_SPAN = 8;
 localparam real SYMBOL_PHASE_OFFSET = 0.22;
 localparam real PI = 3.14159265358979323846;
 localparam real PHASE_STEP_RAD = 2.0 * PI * (CARRIER_HZ + CARRIER_OFFSET_HZ) / FS_HZ;
-`ifdef QPSK_RX_RANDOM_DRIFT
+`ifdef QPSK_RX_RANDOM_DRIFT_NEG
+localparam real CARRIER_OFFSET_FINAL_HZ = -35000.0;
+localparam integer CARRIER_DRIFT_START_SAMPLE = 500000;
+localparam integer CARRIER_DRIFT_SAMPLES = 80000;
+`elsif QPSK_RX_RANDOM_DRIFT
 localparam real CARRIER_OFFSET_FINAL_HZ = 35000.0;
 localparam integer CARRIER_DRIFT_START_SAMPLE = 500000;
 localparam integer CARRIER_DRIFT_SAMPLES = 80000;
@@ -287,7 +301,7 @@ always @(posedge clk or negedge rst_n) begin
                     (amp_now * rf_sample)) + noise_sample;
         adc_data <= clip_adc(quantized);
 
-`ifdef QPSK_RX_RANDOM_DRIFT
+`ifdef QPSK_RX_RANDOM_DRIFT_ENABLED
         if (sample_count < CARRIER_DRIFT_START_SAMPLE) begin
             carrier_offset_now = CARRIER_OFFSET_HZ;
         end else if (sample_count < (CARRIER_DRIFT_START_SAMPLE + CARRIER_DRIFT_SAMPLES)) begin
@@ -386,7 +400,7 @@ always @(posedge clk or negedge rst_n) begin
                     locked_cnt <= locked_cnt + 1;
 
                     if (locked_cnt >= TARGET_LOCKED_SYMS) begin
-`ifdef QPSK_RX_RANDOM_DRIFT
+`ifdef QPSK_RX_RANDOM_DRIFT_ENABLED
                         if (!drift_done_seen) begin
                             tb_fail("ERR_CARRIER_DRIFT_NOT_COMPLETED");
                         end
@@ -439,6 +453,8 @@ initial begin
     #12000000;
 `elsif QPSK_RX_RANDOM_WIDE_NEG
     #12000000;
+`elsif QPSK_RX_RANDOM_DRIFT_NEG
+    #9000000;
 `elsif QPSK_RX_RANDOM_DRIFT
     #9000000;
 `else
@@ -448,3 +464,7 @@ initial begin
 end
 
 endmodule
+
+`ifdef QPSK_RX_RANDOM_DRIFT_ENABLED
+`undef QPSK_RX_RANDOM_DRIFT_ENABLED
+`endif
