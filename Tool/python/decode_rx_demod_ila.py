@@ -319,6 +319,7 @@ def summarize(
 
     scores = [item["lock_score"] for item in items]
     nco = [item["nco_freq_corr"] for item in items]
+    nco_locked = [item["nco_freq_corr"] for item in locked]
     phases = [item["best_phase"] for item in items]
     adc_raw = [item["adc_raw"] for item in items]
     valid_symbols = [item["symbol"] for item in valid]
@@ -332,6 +333,10 @@ def summarize(
     nco_last_hz = nco[-1] * nco_lsb_hz
     nco_min_hz = min(nco) * nco_lsb_hz
     nco_max_hz = max(nco) * nco_lsb_hz
+    nco_last_locked = nco_locked[-1] if nco_locked else None
+    nco_last_locked_hz = (
+        nco_last_locked * nco_lsb_hz if nco_last_locked is not None else None
+    )
     lock_ratio = lock_count / len(items)
     valid_ratio = valid_count / len(items)
 
@@ -357,9 +362,16 @@ def summarize(
         "nco_freq_corr_min": min(nco),
         "nco_freq_corr_max": max(nco),
         "nco_freq_corr_last": nco[-1],
+        "nco_freq_corr_abs_max": nco_abs_max,
+        "nco_freq_corr_abs_last": abs(nco[-1]),
+        "nco_freq_corr_last_when_locked": nco_last_locked,
+        "nco_freq_corr_abs_last_when_locked": abs(nco_last_locked)
+        if nco_last_locked is not None
+        else None,
         "nco_freq_corr_min_hz": nco_min_hz,
         "nco_freq_corr_max_hz": nco_max_hz,
         "nco_freq_corr_last_hz": nco_last_hz,
+        "nco_freq_corr_last_when_locked_hz": nco_last_locked_hz,
         "best_phase_counts": count_by(phases),
         "symbol_counts_when_valid": count_by(valid_symbols),
         "symbol_entropy_when_valid_bits": entropy(valid_symbols),
@@ -428,6 +440,9 @@ def check_expectations(
     min_valid_ratio: float | None,
     min_adc_span: int | None,
     min_gray_cycle_ratio: float | None,
+    expect_nco_sign: str | None,
+    min_nco_abs: int | None,
+    max_nco_abs: int | None,
 ) -> list[str]:
     failures: list[str] = []
     samples = int(summary.get("samples", 0))
@@ -438,6 +453,11 @@ def check_expectations(
     valid_ratio = float(summary.get("valid_ratio", 0.0))
     adc_span = int(summary.get("adc_raw_span", 0))
     gray_cycle_ratio = float(summary.get("gray_cycle_best_match_ratio", 0.0))
+    nco_check_value = summary.get("nco_freq_corr_last_when_locked")
+    if nco_check_value is None:
+        nco_check_value = summary.get("nco_freq_corr_last", 0)
+    nco_check_value = int(nco_check_value)
+    nco_check_abs = abs(nco_check_value)
 
     if min_lock_ratio is not None and lock_ratio < min_lock_ratio:
         failures.append(f"lock_ratio {lock_ratio:.6g} < {min_lock_ratio:.6g}")
@@ -448,6 +468,20 @@ def check_expectations(
     if min_gray_cycle_ratio is not None and gray_cycle_ratio < min_gray_cycle_ratio:
         failures.append(
             f"gray_cycle_best_match_ratio {gray_cycle_ratio:.6g} < {min_gray_cycle_ratio:.6g}"
+        )
+    if expect_nco_sign == "positive" and nco_check_value <= 0:
+        failures.append(f"nco_freq_corr_last_when_locked {nco_check_value} is not positive")
+    elif expect_nco_sign == "negative" and nco_check_value >= 0:
+        failures.append(f"nco_freq_corr_last_when_locked {nco_check_value} is not negative")
+    elif expect_nco_sign == "nonzero" and nco_check_value == 0:
+        failures.append("nco_freq_corr_last_when_locked is zero")
+    if min_nco_abs is not None and nco_check_abs < min_nco_abs:
+        failures.append(
+            f"abs(nco_freq_corr_last_when_locked) {nco_check_abs} < {min_nco_abs}"
+        )
+    if max_nco_abs is not None and nco_check_abs > max_nco_abs:
+        failures.append(
+            f"abs(nco_freq_corr_last_when_locked) {nco_check_abs} > {max_nco_abs}"
         )
 
     return failures
@@ -520,6 +554,21 @@ def main() -> int:
         type=float,
         help="Minimum Gray-cycle match ratio required for a passing check",
     )
+    parser.add_argument(
+        "--expect-nco-sign",
+        choices=("positive", "negative", "nonzero"),
+        help="Require the last locked nco_freq_corr value to have this sign",
+    )
+    parser.add_argument(
+        "--min-nco-abs",
+        type=int,
+        help="Minimum absolute last locked nco_freq_corr value required for a passing check",
+    )
+    parser.add_argument(
+        "--max-nco-abs",
+        type=int,
+        help="Maximum absolute last locked nco_freq_corr value allowed for a passing check",
+    )
     args = parser.parse_args()
 
     items, unknown_count = iter_decoded(args.csv_file, args.bus_column)
@@ -535,6 +584,9 @@ def main() -> int:
     min_valid_ratio = args.min_valid_ratio
     min_adc_span = args.min_adc_span
     min_gray_cycle_ratio = args.min_gray_cycle_ratio
+    expect_nco_sign = args.expect_nco_sign
+    min_nco_abs = args.min_nco_abs
+    max_nco_abs = args.max_nco_abs
     if args.check_external_rx:
         if min_lock_ratio is None:
             min_lock_ratio = 0.50
@@ -547,7 +599,15 @@ def main() -> int:
 
     checks_requested = args.check_external_rx or args.check_gray_cycle or any(
         value is not None
-        for value in (min_lock_ratio, min_valid_ratio, min_adc_span, min_gray_cycle_ratio)
+        for value in (
+            min_lock_ratio,
+            min_valid_ratio,
+            min_adc_span,
+            min_gray_cycle_ratio,
+            expect_nco_sign,
+            min_nco_abs,
+            max_nco_abs,
+        )
     )
     check_failures = (
         check_expectations(
@@ -556,6 +616,9 @@ def main() -> int:
             min_valid_ratio=min_valid_ratio,
             min_adc_span=min_adc_span,
             min_gray_cycle_ratio=min_gray_cycle_ratio,
+            expect_nco_sign=expect_nco_sign,
+            min_nco_abs=min_nco_abs,
+            max_nco_abs=max_nco_abs,
         )
         if checks_requested
         else []

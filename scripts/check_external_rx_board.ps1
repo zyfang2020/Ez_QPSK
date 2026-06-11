@@ -5,6 +5,9 @@
 #
 # Local PRBS analog loopback smoke:
 #   powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode loopback_prbs
+#
+# External source with known positive residual carrier offset:
+#   powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -ExpectNcoSign positive -MinNcoAbs 96 -MaxNcoAbs 8192
 
 [CmdletBinding()]
 param(
@@ -28,6 +31,10 @@ param(
     [double]$MinValidRatio = [double]::NaN,
     [int]$MinAdcSpan = -1,
     [double]$MinGrayCycleRatio = [double]::NaN,
+    [ValidateSet("", "positive", "negative", "nonzero")]
+    [string]$ExpectNcoSign = "",
+    [int]$MinNcoAbs = -1,
+    [int]$MaxNcoAbs = -1,
 
     [string[]]$ExistingCsv = @()
 )
@@ -178,6 +185,15 @@ foreach ($csv in $CsvFiles) {
     }
     if (![double]::IsNaN($MinGrayCycleRatio)) {
         $decodeArgs += @("--min-gray-cycle-ratio", "$MinGrayCycleRatio")
+    }
+    if ($ExpectNcoSign -ne "") {
+        $decodeArgs += @("--expect-nco-sign", $ExpectNcoSign)
+    }
+    if ($MinNcoAbs -ge 0) {
+        $decodeArgs += @("--min-nco-abs", "$MinNcoAbs")
+    }
+    if ($MaxNcoAbs -ge 0) {
+        $decodeArgs += @("--max-nco-abs", "$MaxNcoAbs")
     }
     if ($WriteDecodedCsv) {
         $decodeArgs += @("--decoded-csv", (Decoded-CsvPath $csv))
