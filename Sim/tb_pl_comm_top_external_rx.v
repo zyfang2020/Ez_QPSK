@@ -18,8 +18,9 @@ localparam integer PKT_LEN = 128;
 localparam integer PHASE_W = 24;
 localparam integer MAX_SYMBOLS = 4096;
 localparam integer SYMBOL_MASK = MAX_SYMBOLS - 1;
-localparam integer CAL_SYMS = 12;
+localparam integer CAL_SYMS = 32;
 localparam integer SEARCH_WIN = 6;
+localparam integer LOCK_SETTLE_SYMS = 64;
 localparam integer TARGET_LOCKED_SYMS = 260;
 localparam integer MIN_NCO_CORR = 96;
 
@@ -90,6 +91,7 @@ integer locked_offset;
 integer locked_rot;
 integer mismatch_cnt;
 integer dac_nonzero_cnt;
+integer lock_settle_cnt;
 reg [15:0] lfsr;
 reg [15:0] noise_lfsr;
 reg locked_seen;
@@ -326,6 +328,7 @@ always @(posedge clk_adc or negedge rst_n) begin
         rx_valid_cnt <= 0;
         locked_cnt <= 0;
         calib_count <= 0;
+        lock_settle_cnt <= 0;
         locked_offset <= 0;
         locked_rot <= 0;
         mismatch_cnt <= 0;
@@ -352,6 +355,7 @@ always @(posedge clk_adc or negedge rst_n) begin
             if (rx_lock_dbg) begin
                 if (!locked_seen) begin
                     locked_seen <= 1'b1;
+                    lock_settle_cnt <= 0;
                     $display("[TB_TOP_EXT_RX][INFO] %0t ns: blind lock acquired, sym=%b I=%0d Q=%0d phase=%0d rot=%0d gray_score=%0d blind_score=%0d nco_corr=%0d tx_ref=%0d",
                              $time, rx_sym_dbg, rx_i_dbg, rx_q_dbg,
                              rx_best_phase_dbg, rx_phase_bin_dbg,
@@ -362,12 +366,16 @@ always @(posedge clk_adc or negedge rst_n) begin
                 end
 
                 if (!calibrated) begin
-                    calib_rx[calib_count] = rx_sym_dbg;
-                    calib_ref[calib_count] = tx_ref_idx;
-                    if (calib_count == (CAL_SYMS - 1)) begin
-                        calibrate_reference;
+                    if (lock_settle_cnt < LOCK_SETTLE_SYMS) begin
+                        lock_settle_cnt <= lock_settle_cnt + 1;
                     end else begin
-                        calib_count <= calib_count + 1;
+                        calib_rx[calib_count] = rx_sym_dbg;
+                        calib_ref[calib_count] = tx_ref_idx;
+                        if (calib_count == (CAL_SYMS - 1)) begin
+                            calibrate_reference;
+                        end else begin
+                            calib_count <= calib_count + 1;
+                        end
                     end
                 end else begin
                     expected_sym = rotate_sym(tx_sym_at(tx_ref_idx - locked_offset), locked_rot);
@@ -411,7 +419,7 @@ always @(posedge clk_adc) begin
         !u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.track_locked &&
         !u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.blind_locked &&
         !u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.acq_freq_wrapped &&
-        (u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.acq_freq_dwell == 9'd383)) begin
+        (u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.acq_freq_dwell == 9'd255)) begin
         $display("[TB_TOP_EXT_RX][ACQ] t=%0t idx=%0d freq=%0d cand=%0d best=%0d best_freq=%0d phase=%0d stable=%0b fine=%0b dd_err=%0d",
                  $time,
                  u_dut.u_pl_comm_top.u_qpsk_rx_fixed_demod.acq_freq_idx,
@@ -436,7 +444,7 @@ initial begin
 end
 
 initial begin
-    #5000000;
+    #6000000;
     tb_fail("ERR_TIMEOUT");
 end
 

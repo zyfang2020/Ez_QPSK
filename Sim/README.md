@@ -11,7 +11,7 @@
 - `tb_qpsk_rx_demod_loopback.v`：本地 TX loopback 到 PL 侧 QPSK 在线解调验证，检查 Gray 循环恢复与 lock。
 - `tb_qpsk_rx_demod_impairments.v`：直接生成带相位偏移、`3 kHz` 残余频偏、符号相位偏移和 ADC DC 的 QPSK 输入，验证进阶 RX 恢复余量。
 - `tb_qpsk_rx_demod_external_drift.v`：直接生成独立 `2.010 Msym/s` 外部 QPSK 输入，按 TX 参考校验 RX 是否跟随符号钟漂移。
-- `tb_qpsk_rx_demod_random_external.v`：直接生成独立符号率、带 `+15 kHz/-15 kHz` 残余载波偏差、慢幅度/DC 漂移和 ADC 采样噪声的 PRBS QPSK 输入，验证无 Gray 循环先验时的锁前频偏扫描、盲锁、锁后 NCO 频偏微调和符号恢复。
+- `tb_qpsk_rx_demod_random_external.v`：直接生成独立符号率、带 `+15 kHz/-15 kHz` 和宽压测 `+35 kHz/-35 kHz` 残余载波偏差、慢幅度/DC 漂移和 ADC 采样噪声的 PRBS QPSK 输入，验证无 Gray 循环先验时的锁前频偏扫描、盲锁、锁后 NCO 频偏微调和符号恢复。
 - `tb_pl_comm_top_external_rx.v`：顶层 external RX 模式验证，检查 `FIXED_TX_EN=0/FIXED_RX_EN=1` 下 TX 回零、J11 debug 输出、正/负 NCO 频偏方向和外部 ADC 输入解调。
 - `tb_pl_comm_top_fixed_cfg_loopback.v`：顶层无板数字回环验证，检查 RX AXIS 数据、`tkeep`、`tlast` 和回压保持行为。
 
@@ -26,6 +26,8 @@
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_external_drift_sim.tcl
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_random_external_sim.tcl
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_random_external_neg_sim.tcl
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_random_external_wide_sim.tcl
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_random_external_wide_neg_sim.tcl
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_pl_comm_top_external_rx_sim.tcl
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_pl_comm_top_external_rx_neg_sim.tcl
 ```
@@ -44,15 +46,16 @@
 2. `tb_qpsk_rx_demod_loopback.v`：确认新增 PL 侧 RX demod 支路能在本地 TX loopback 下锁定并连续恢复 Gray 符号。
 3. `tb_qpsk_rx_demod_impairments.v`：确认 RX demod 对固定相位偏移、`3 kHz` 残余频偏、符号采样相位偏移和 ADC DC 仍能锁定。
 4. `tb_qpsk_rx_demod_external_drift.v`：确认 RX demod 对独立外部符号率漂移仍能跟随真实 TX Gray 序列。
-5. `tb_qpsk_rx_demod_random_external.v`：确认 RX demod 不依赖本地 Gray 循环也能盲锁并恢复带 `+15 kHz/-15 kHz` 残余载波偏差、慢幅度/DC 漂移和 ADC 采样噪声的 PRBS QPSK 符号。
+5. `tb_qpsk_rx_demod_random_external.v`：确认 RX demod 不依赖本地 Gray 循环也能盲锁并恢复带 `+15 kHz/-15 kHz` 和宽压测 `+35 kHz/-35 kHz` 残余载波偏差、慢幅度/DC 漂移和 ADC 采样噪声的 PRBS QPSK 符号。
 6. `tb_pl_comm_top_external_rx.v`：确认顶层固定配置在外部 RX 模式下关闭本地 TX，并通过 J11 debug 输出外部输入的 lock/bit；正负频偏脚本分别检查 NCO 校正方向。
 7. `tb_rx_chain_min.v`：确认 RX 链路数据连续性和固定包长 `tlast` 节奏。
 8. `tb_pl_comm_top_fixed_cfg_loopback.v`：确认顶层固定配置下 AXIS 数据、`tkeep`、`tlast` 和回压保持行为正确。
 
 最近验证：
 
+- 2026-06-11：扩大锁前扫描范围到 `±8192` NCO correction，并把候选评分改为“跳变机会中 fine 相位质量加分、坏跳变扣分”后，`run_qpsk_rx_demod_random_external_wide_sim.tcl` 和 `run_qpsk_rx_demod_random_external_wide_neg_sim.tcl` 均通过，覆盖 `+35 kHz/-35 kHz` 残余载波偏差。宽正频偏：`locked_symbols=360`，`valid_symbols=9847`，`nco_corr=6007`；宽负频偏：`locked_symbols=360`，`valid_symbols=9628`，`nco_corr=-5768`。
+- 2026-06-11：随机外部和顶层 external-RX checker 增加 lock 后 settle 窗口和 32 符号 PRBS 校准，避免刚到 lock 阈值时环路尚未完全稳定造成校准误判。最新 `run_qpsk_rx_demod_random_external_sim.tcl` / `_neg_sim.tcl` 均通过；最新 `run_pl_comm_top_external_rx_sim.tcl` / `_neg_sim.tcl` 均通过。
 - 2026-06-11：锁后 Costas-like PI 载波细调加入后，`run_qpsk_rx_demod_loopback_sim.tcl`、`run_qpsk_rx_demod_random_external_sim.tcl`、`run_qpsk_rx_demod_random_external_neg_sim.tcl`、`run_pl_comm_top_external_rx_sim.tcl` 和 `run_pl_comm_top_external_rx_neg_sim.tcl` 均通过。顶层正频偏：`locked_symbols=260`，`valid_symbols=7621`，`nco_corr=2487`；顶层负频偏：`locked_symbols=260`，`valid_symbols=7863`，`nco_corr=-2502`。
-- 2026-06-11：`25..35 kHz` 级宽残余载波偏差仍会暴露锁前候选假锁问题，当前不保留未通过的 wide-offset 回归脚本；后续需要非数据辅助频偏估计或更强候选评分后再纳入回归。
 - 2026-06-11：`run_pl_comm_top_external_rx_sim.tcl` 和 `run_pl_comm_top_external_rx_neg_sim.tcl` 在 acquisition transition-gating 调整后均通过。正频偏：`locked_symbols=260`，`valid_symbols=7621`，`nco_corr=2560`；负频偏：`locked_symbols=260`，`valid_symbols=7863`，`nco_corr=-2560`。
 - 2026-06-10：`run_qpsk_rx_demod_random_external_sim.tcl` 和 `run_qpsk_rx_demod_random_external_neg_sim.tcl` 均通过，覆盖 PRBS QPSK、`+15 kHz/-15 kHz` 残余载波偏差、慢幅度/DC 漂移、噪声和独立符号率漂移。
 - 2026-06-10：`run_qpsk_rx_demod_loopback_sim.tcl` 回归通过，确认本地 Gray loopback 未受 PRBS 盲锁调参影响。

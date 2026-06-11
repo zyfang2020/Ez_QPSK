@@ -188,6 +188,11 @@ Hardware result on 2026-06-10:
   - refreshed `artifacts/external_rx/Ez_QPSK_external_rx.ltx`
 - The matching XSA was refreshed with `scripts/export_current_xsa.tcl -tclargs -include-bit -out artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa`.
 - `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx_costas` passed for the Costas-like PI external-RX XSA.
+- Latest wide-acquisition `external_rx` rebuild on 2026-06-11 passed implementation/write_bitstream timing with setup slack `0.219 ns` and hold slack `0.042 ns`, and refreshed:
+  - `artifacts/external_rx/Ez_QPSK_external_rx.bit`
+  - `artifacts/external_rx/Ez_QPSK_external_rx.ltx`
+  - `artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa`
+- `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx_wide_acq` passed for the refreshed wide-acquisition external-RX XSA.
 - Programming the refreshed `external_rx` image and capturing ILA succeeded, but the current ADC input was only near-midscale noise:
   - `Tool/data/external_rx_latest_ila_00..02.csv`
   - `adc_raw_span=3/2/2`
@@ -241,9 +246,23 @@ Stage-2 RX demod status on 2026-06-10/11:
 - Top-level external-RX negative-offset simulation now passes after requiring acquisition candidates to include stable adjacent-symbol transitions:
   - `scripts/run_pl_comm_top_external_rx_neg_sim.tcl`
   - `locked_symbols=260`, `valid_symbols=7863`, `nco_corr=-2560`
-- The current blind-lock logic is intentionally conservative: it waits longer before blind acquisition, scans coarse NCO correction candidates, suppresses blind score accumulation immediately after phase-bin movement, avoids first-round lock on small coarse-frequency candidates, and requires transition quality before scoring acquisition candidates. This prevents the observed early false lock in random/PRBS tests while preserving the known Gray-cycle path.
-- Open carrier-recovery note: the latest fixed-frequency positive/negative PRBS simulations now include lock-after Costas-like PI NCO fine trim, but this is still not a full Costas/Gardner synchronizer. A future non-data-aided or stronger lock-before frequency estimator plus stronger timing recovery should replace the current coarse acquisition path before claiming broad arbitrary external-transmitter tolerance.
-- Exploratory wide-offset note on 2026-06-11: pushing the current simplified blind acquisition toward `25..35 kHz` residual carrier offsets still exposed false-candidate selection and timeout behavior, even after the lock-after PI trim. Do not keep failing wide-offset scripts in repo; reintroduce wider-offset simulations only after the lock-before acquisition path actually passes them.
+- Latest wide-offset random PRBS simulations passed after expanding the coarse acquisition sweep to `±8192` NCO correction units and changing acquisition scoring to reward fine-quality symbol transitions while penalizing bad transitions:
+  - `scripts/run_qpsk_rx_demod_random_external_wide_sim.tcl`
+  - `+35 kHz`: `locked_symbols=360`, `valid_symbols=9847`, final `nco_corr=6007`
+  - `scripts/run_qpsk_rx_demod_random_external_wide_neg_sim.tcl`
+  - `-35 kHz`: `locked_symbols=360`, `valid_symbols=9628`, final `nco_corr=-5768`
+- Latest standard random PRBS simulations passed with lock-settle checker hardening:
+  - `scripts/run_qpsk_rx_demod_random_external_sim.tcl`
+  - `+15 kHz`: `locked_symbols=360`, `valid_symbols=9749`, final `nco_corr=2552`
+  - `scripts/run_qpsk_rx_demod_random_external_neg_sim.tcl`
+  - `-15 kHz`: `locked_symbols=360`, `valid_symbols=10136`, final `nco_corr=-2316`
+- Latest top-level external-RX simulations passed with the same lock-settle checker hardening:
+  - `scripts/run_pl_comm_top_external_rx_sim.tcl`
+  - `+15 kHz`: `locked_symbols=260`, `valid_symbols=9413`, final `nco_corr=2515`
+  - `scripts/run_pl_comm_top_external_rx_neg_sim.tcl`
+  - `-15 kHz`: `locked_symbols=260`, `valid_symbols=9807`, final `nco_corr=-2307`
+- The current blind-lock logic is intentionally conservative: it waits longer before blind acquisition, scans coarse NCO correction candidates, suppresses blind score accumulation immediately after phase-bin movement, avoids first-round lock on small coarse-frequency candidates, scores acquisition candidates by transition quality rather than raw transition count, and uses a stricter post-scan fine-quality path before blind lock. This prevents the observed early false lock in random/PRBS tests while preserving the known Gray-cycle path.
+- Open carrier-recovery note: the latest fixed-frequency positive/negative PRBS simulations now include lock-after Costas-like PI NCO fine trim and pass the `±35 kHz` simulation stress case, but this is still not a full Costas/Gardner synchronizer. A future non-data-aided or stronger lock-before frequency estimator plus stronger timing recovery should replace the current coarse acquisition path before claiming broad arbitrary external-transmitter tolerance.
 
 ## Suggested Goal-Mode Execution Plan
 

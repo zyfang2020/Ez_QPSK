@@ -16,15 +16,22 @@ localparam integer PHASE_W = 24;
 localparam integer SPS = 50;
 localparam integer MAX_SYMBOLS = 4096;
 localparam integer SYMBOL_MASK = MAX_SYMBOLS - 1;
-localparam integer CAL_SYMS = 12;
+localparam integer CAL_SYMS = 32;
 localparam integer SEARCH_WIN = 6;
+localparam integer LOCK_SETTLE_SYMS = 64;
 localparam integer TARGET_LOCKED_SYMS = 360;
 localparam integer MIN_NCO_CORR = 96;
 localparam [PHASE_W-1:0] RX_PHASE_INC = 24'h11EB85;
 
 localparam real FS_HZ = 100000000.0;
 localparam real CARRIER_HZ = 7000000.0;
-`ifdef QPSK_RX_RANDOM_NEG
+`ifdef QPSK_RX_RANDOM_WIDE_NEG
+localparam real CARRIER_OFFSET_HZ = -35000.0;
+localparam integer EXPECT_NCO_SIGN = -1;
+`elsif QPSK_RX_RANDOM_WIDE
+localparam real CARRIER_OFFSET_HZ = 35000.0;
+localparam integer EXPECT_NCO_SIGN = 1;
+`elsif QPSK_RX_RANDOM_NEG
 localparam real CARRIER_OFFSET_HZ = -15000.0;
 localparam integer EXPECT_NCO_SIGN = -1;
 `else
@@ -78,6 +85,7 @@ integer best_matches;
 integer locked_offset;
 integer locked_rot;
 integer mismatch_cnt;
+integer lock_settle_cnt;
 reg [15:0] lfsr;
 reg [15:0] noise_lfsr;
 reg locked_seen;
@@ -281,6 +289,7 @@ always @(posedge clk or negedge rst_n) begin
         rx_valid_cnt <= 0;
         locked_cnt <= 0;
         calib_count <= 0;
+        lock_settle_cnt <= 0;
         locked_offset <= 0;
         locked_rot <= 0;
         mismatch_cnt <= 0;
@@ -300,6 +309,7 @@ always @(posedge clk or negedge rst_n) begin
             if (rx_lock) begin
                 if (!locked_seen) begin
                     locked_seen <= 1'b1;
+                    lock_settle_cnt <= 0;
                     $display("[TB_QPSK_RX_RANDOM][INFO] %0t ns: blind lock acquired, sym=%b I=%0d Q=%0d phase=%0d rot=%0d gray_score=%0d blind_score=%0d nco_corr=%0d tx_ref=%0d",
                              $time, rx_sym, dbg_i, dbg_q, dbg_best_phase,
                              dbg_phase_bin, dbg_lock_score,
@@ -307,12 +317,16 @@ always @(posedge clk or negedge rst_n) begin
                 end
 
                 if (!calibrated) begin
-                    calib_rx[calib_count] = rx_sym;
-                    calib_ref[calib_count] = tx_ref_idx;
-                    if (calib_count == (CAL_SYMS - 1)) begin
-                        calibrate_reference;
+                    if (lock_settle_cnt < LOCK_SETTLE_SYMS) begin
+                        lock_settle_cnt <= lock_settle_cnt + 1;
                     end else begin
-                        calib_count <= calib_count + 1;
+                        calib_rx[calib_count] = rx_sym;
+                        calib_ref[calib_count] = tx_ref_idx;
+                        if (calib_count == (CAL_SYMS - 1)) begin
+                            calibrate_reference;
+                        end else begin
+                            calib_count <= calib_count + 1;
+                        end
                     end
                 end else begin
                     expected_sym = rotate_sym(tx_sym_at(tx_ref_idx - locked_offset), locked_rot);
@@ -344,6 +358,21 @@ always @(posedge clk or negedge rst_n) begin
     end
 end
 
+`ifdef QPSK_RX_RANDOM_ACQ_TRACE
+always @(posedge clk) begin
+    if (rst_n && rx_valid &&
+        u_rx.blind_train_active && !u_rx.track_locked &&
+        !u_rx.blind_locked && !u_rx.acq_freq_wrapped &&
+        (u_rx.acq_freq_dwell == 9'd255)) begin
+        $display("[TB_QPSK_RX_RANDOM][ACQ] %0t ns: idx=%0d nco_corr=%0d score=%0d phase=%0d guard=%0d dd_acc=%0d dd_err=%0d I=%0d Q=%0d",
+                 $time, u_rx.acq_freq_idx, u_rx.nco_freq_corr,
+                 u_rx.acq_candidate_score, u_rx.phase_bin,
+                 u_rx.blind_phase_guard, u_rx.dd_phase_acc,
+                 u_rx.dd_phase_err, dbg_i, dbg_q);
+    end
+end
+`endif
+
 initial begin
     rst_n = 1'b0;
     adc_data = (1 << (ADC_DW-1));
@@ -352,7 +381,13 @@ initial begin
 end
 
 initial begin
-    #5000000;
+`ifdef QPSK_RX_RANDOM_WIDE
+    #12000000;
+`elsif QPSK_RX_RANDOM_WIDE_NEG
+    #12000000;
+`else
+    #6000000;
+`endif
     tb_fail("ERR_TIMEOUT");
 end
 

@@ -72,9 +72,9 @@ localparam signed [FREQ_CORR_W:0] FREQ_CORR_MAX_EXT =
 localparam signed [FREQ_CORR_W:0] FREQ_CORR_MIN_EXT =
     {FREQ_CORR_MIN[FREQ_CORR_W-1], FREQ_CORR_MIN};
 localparam signed [FREQ_CORR_W-1:0] ACQ_FREQ_STEP = 16'sd512;
-localparam signed [FREQ_CORR_W-1:0] ACQ_FREQ_MAX = 16'sd4096;
-localparam [4:0] ACQ_FREQ_LAST_IDX = 5'd16;
-localparam [8:0] ACQ_FREQ_DWELL_SYMS = 9'd384;
+localparam signed [FREQ_CORR_W-1:0] ACQ_FREQ_MAX = 16'sd8192;
+localparam [5:0] ACQ_FREQ_LAST_IDX = 6'd32;
+localparam [8:0] ACQ_FREQ_DWELL_SYMS = 9'd256;
 localparam [15:0] BLIND_ACQ_DELAY_SYMS = 16'd256;
 localparam [15:0] BLIND_MIN_ABS = 16'd24;
 localparam [17:0] BLIND_ERR_LIMIT = 18'd256;
@@ -96,7 +96,7 @@ localparam [1:0] TRACK_ANGLE  = 2'd3;
 reg [PHASE_W-1:0] phase_acc;
 reg [5:0] sample_phase;
 (* keep = "true", mark_debug = "true" *) reg signed [FREQ_CORR_W-1:0] nco_freq_corr;
-reg [4:0] acq_freq_idx;
+reg [5:0] acq_freq_idx;
 reg [8:0] acq_freq_dwell;
 reg acq_freq_wrapped;
 reg [9:0] acq_candidate_score;
@@ -254,6 +254,7 @@ wire blind_symbol_stable;
 wire blind_symbol_fine;
 wire blind_symbol_transition;
 wire blind_symbol_quality;
+wire blind_symbol_fine_quality;
 wire blind_acq_candidate_ready;
 
 reg signed [12:0] dd_acc_next;
@@ -338,6 +339,8 @@ assign blind_symbol_transition = blind_prev_sym_valid &&
                                  (dec_sym_done != blind_prev_sym);
 assign blind_symbol_quality = blind_symbol_stable &&
                               blind_symbol_transition;
+assign blind_symbol_fine_quality = blind_symbol_fine &&
+                                   blind_symbol_transition;
 assign blind_acq_candidate_ready = blind_locked || acq_freq_wrapped;
 
 generate
@@ -518,14 +521,14 @@ function [5:0] phase_forward_delta;
 endfunction
 
 function signed [FREQ_CORR_W-1:0] acq_freq_value;
-    input [4:0] idx;
-    reg [4:0] mag_idx;
+    input [5:0] idx;
+    reg [5:0] mag_idx;
     reg signed [FREQ_CORR_W-1:0] mag;
     begin
-        if (idx == 5'd0) begin
+        if (idx == 6'd0) begin
             acq_freq_value = {FREQ_CORR_W{1'b0}};
         end else begin
-            mag_idx = (idx + 5'd1) >> 1;
+            mag_idx = (idx + 6'd1) >> 1;
             mag = $signed({1'b0, mag_idx}) * ACQ_FREQ_STEP;
             if (mag > ACQ_FREQ_MAX) begin
                 mag = ACQ_FREQ_MAX;
@@ -559,7 +562,7 @@ always @(posedge clk) begin
         phase_acc        <= {PHASE_W{1'b0}};
         sample_phase     <= 6'd0;
         nco_freq_corr    <= {FREQ_CORR_W{1'b0}};
-        acq_freq_idx     <= 5'd0;
+        acq_freq_idx     <= 6'd0;
         acq_freq_dwell   <= 9'd0;
         acq_freq_wrapped <= 1'b0;
         acq_candidate_score <= 10'd0;
@@ -649,7 +652,7 @@ always @(posedge clk) begin
         phase_acc        <= {PHASE_W{1'b0}};
         sample_phase     <= 6'd0;
         nco_freq_corr    <= {FREQ_CORR_W{1'b0}};
-        acq_freq_idx     <= 5'd0;
+        acq_freq_idx     <= 6'd0;
         acq_freq_dwell   <= 9'd0;
         acq_freq_wrapped <= 1'b0;
         acq_candidate_score <= 10'd0;
@@ -753,6 +756,8 @@ always @(posedge clk) begin
             nco_freq_corr <= acq_best_freq;
             phase_bin <= acq_best_phase_bin;
             dd_phase_acc <= 13'sd0;
+            blind_lock_score <= 8'd0;
+            blind_phase_guard <= BLIND_PHASE_GUARD_SYMS;
             blind_prev_sym_valid <= 1'b0;
         end else if (dd_nco_step_pending && !rot_dec_valid) begin
             dd_nco_step_pending <= 1'b0;
@@ -829,7 +834,8 @@ always @(posedge clk) begin
 
             blind_score_next = blind_lock_score;
             if ((blind_train_active && blind_acq_candidate_ready) || blind_locked) begin
-                if (blind_symbol_stable) begin
+                if (blind_locked ? blind_symbol_stable :
+                    (acq_freq_wrapped ? blind_symbol_fine : blind_symbol_fine_quality)) begin
                     if (blind_lock_score != 8'hff) begin
                         blind_score_next = blind_lock_score + 8'd1;
                     end
@@ -845,16 +851,22 @@ always @(posedge clk) begin
 
             acq_candidate_score_next = acq_candidate_score;
             if (acq_symbol_score_valid) begin
-                if (acq_candidate_score < (acq_symbol_score_fine ? 10'h3fe : 10'h3ff)) begin
-                    acq_candidate_score_next = acq_candidate_score +
-                                               (acq_symbol_score_fine ? 10'd2 : 10'd1);
+                if (acq_symbol_score_fine) begin
+                    if (acq_candidate_score < 10'h3fe) begin
+                        acq_candidate_score_next = acq_candidate_score + 10'd2;
+                    end else begin
+                        acq_candidate_score_next = 10'h3ff;
+                    end
+                end else if (acq_candidate_score > 10'd1) begin
+                    acq_candidate_score_next = acq_candidate_score - 10'd2;
                 end else begin
-                    acq_candidate_score_next = 10'h3ff;
+                    acq_candidate_score_next = 10'd0;
                 end
             end
             acq_symbol_score_valid <= blind_train_active && !track_locked &&
                                       !blind_locked && !acq_freq_wrapped &&
-                                      blind_symbol_quality;
+                                      blind_symbol_transition &&
+                                      (blind_phase_guard == 5'd0);
             acq_symbol_score_fine <= blind_symbol_fine;
 
             if (blind_train_active || blind_locked) begin
@@ -950,12 +962,12 @@ always @(posedge clk) begin
                     dd_nco_step_pending <= 1'b0;
                     dd_nco_step <= {FREQ_CORR_W{1'b0}};
                     if (acq_freq_idx >= ACQ_FREQ_LAST_IDX) begin
-                        acq_freq_idx <= 5'd0;
+                        acq_freq_idx <= 6'd0;
                         acq_freq_wrapped <= 1'b1;
                         acq_apply_best_pending <= 1'b1;
                     end else begin
-                        acq_freq_idx <= acq_freq_idx + 5'd1;
-                        nco_freq_corr <= acq_freq_value(acq_freq_idx + 5'd1);
+                        acq_freq_idx <= acq_freq_idx + 6'd1;
+                        nco_freq_corr <= acq_freq_value(acq_freq_idx + 6'd1);
                     end
                 end else begin
                     acq_freq_dwell <= acq_freq_dwell + 9'd1;
@@ -965,7 +977,7 @@ always @(posedge clk) begin
             end else if (track_locked || blind_locked ||
                          pattern_lock_now ||
                          (blind_lock_score >= BLIND_LOCK_THRESHOLD)) begin
-                acq_freq_idx <= 5'd0;
+                acq_freq_idx <= 6'd0;
                 acq_freq_dwell <= 9'd0;
                 acq_candidate_score <= 10'd0;
                 acq_symbol_score_valid <= 1'b0;
@@ -974,7 +986,7 @@ always @(posedge clk) begin
                 blind_phase_guard <= 5'd0;
                 blind_prev_sym_valid <= 1'b0;
             end else if (!blind_train_active) begin
-                acq_freq_idx <= 5'd0;
+                acq_freq_idx <= 6'd0;
                 acq_freq_dwell <= 9'd0;
                 acq_freq_wrapped <= 1'b0;
                 acq_candidate_score <= 10'd0;
