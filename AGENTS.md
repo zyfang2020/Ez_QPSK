@@ -181,6 +181,13 @@ Hardware result on 2026-06-10:
   - `artifacts/external_rx/Ez_QPSK_external_rx.ltx`
   - `artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa`
 - `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx_latest` passed for the refreshed XSA after the transition-gating rebuild.
+- After adding lock-after Costas-like PI carrier trim on 2026-06-11, `scripts/run_impl_check.tcl` passed routed timing with setup slack `0.097 ns` and hold slack `0.047 ns`.
+- The matching `external_rx` board image was refreshed with `scripts/run_external_rx_bitstream.tcl -tclargs external_rx`:
+  - implementation/write_bitstream passed with setup slack `0.129 ns` and hold slack `0.047 ns`
+  - refreshed `artifacts/external_rx/Ez_QPSK_external_rx.bit`
+  - refreshed `artifacts/external_rx/Ez_QPSK_external_rx.ltx`
+- The matching XSA was refreshed with `scripts/export_current_xsa.tcl -tclargs -include-bit -out artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa`.
+- `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx_costas` passed for the Costas-like PI external-RX XSA.
 - Programming the refreshed `external_rx` image and capturing ILA succeeded, but the current ADC input was only near-midscale noise:
   - `Tool/data/external_rx_latest_ila_00..02.csv`
   - `adc_raw_span=3/2/2`
@@ -212,11 +219,11 @@ Stage-2 RX demod status on 2026-06-10/11:
 
 - Random PRBS external-like simulation passed for `+15 kHz` residual carrier offset:
   - `scripts/run_qpsk_rx_demod_random_external_sim.tcl`
-  - lock near `nco_corr=2560`, final `nco_corr=2544`
+  - after lock-after Costas-like PI trim, lock near `nco_corr=2560`, final `nco_corr=2450`
   - `locked_symbols=360`
 - Random PRBS external-like simulation passed for `-15 kHz` residual carrier offset:
   - `scripts/run_qpsk_rx_demod_random_external_neg_sim.tcl`
-  - lock/final `nco_corr=-2560`
+  - after lock-after Costas-like PI trim, lock near `nco_corr=-2560`, final `nco_corr=-2491`
   - `locked_symbols=360`
 - Gray local loopback regression still passed:
   - `scripts/run_qpsk_rx_demod_loopback_sim.tcl`
@@ -228,12 +235,15 @@ Stage-2 RX demod status on 2026-06-10/11:
   - `locked_symbols=260`, `nco_corr=2560`
 - Re-run on 2026-06-11 after timing-pipeline cleanup also passed:
   - `locked_symbols=260`, `valid_symbols=7621`, `nco_corr=2560`
+- Re-run on 2026-06-11 after lock-after Costas-like PI carrier trim also passed:
+  - positive offset: `locked_symbols=260`, `valid_symbols=7621`, `nco_corr=2487`
+  - negative offset: `locked_symbols=260`, `valid_symbols=7863`, `nco_corr=-2502`
 - Top-level external-RX negative-offset simulation now passes after requiring acquisition candidates to include stable adjacent-symbol transitions:
   - `scripts/run_pl_comm_top_external_rx_neg_sim.tcl`
   - `locked_symbols=260`, `valid_symbols=7863`, `nco_corr=-2560`
 - The current blind-lock logic is intentionally conservative: it waits longer before blind acquisition, scans coarse NCO correction candidates, suppresses blind score accumulation immediately after phase-bin movement, avoids first-round lock on small coarse-frequency candidates, and requires transition quality before scoring acquisition candidates. This prevents the observed early false lock in random/PRBS tests while preserving the known Gray-cycle path.
-- Open carrier-recovery note: the latest fixed-frequency positive/negative PRBS simulations pass, but this is still not a full Costas/Gardner synchronizer. A future decision-directed carrier acquisition/Costas loop and stronger timing recovery should replace the current coarse acquisition path before claiming broad arbitrary external-transmitter tolerance.
-- Exploratory wide-offset note on 2026-06-11: pushing the current simplified blind acquisition toward `25..35 kHz` residual carrier offsets exposed false-candidate selection and timeout behavior. Do not treat this as a small threshold tweak; the next real upgrade should add a proper Costas/decision-directed frequency loop or non-data-aided frequency estimator, then reintroduce wider-offset simulations only when they pass.
+- Open carrier-recovery note: the latest fixed-frequency positive/negative PRBS simulations now include lock-after Costas-like PI NCO fine trim, but this is still not a full Costas/Gardner synchronizer. A future non-data-aided or stronger lock-before frequency estimator plus stronger timing recovery should replace the current coarse acquisition path before claiming broad arbitrary external-transmitter tolerance.
+- Exploratory wide-offset note on 2026-06-11: pushing the current simplified blind acquisition toward `25..35 kHz` residual carrier offsets still exposed false-candidate selection and timeout behavior, even after the lock-after PI trim. Do not keep failing wide-offset scripts in repo; reintroduce wider-offset simulations only after the lock-before acquisition path actually passes them.
 
 ## Suggested Goal-Mode Execution Plan
 

@@ -12,9 +12,8 @@
 //   - A delayed blind quality path is also present for external sources that do
 //     not send the local Gray test cycle; it locks on constellation confidence
 //     and decision-directed phase error after pattern acquisition has timed out.
-//   - A bounded decision-directed frequency trim nudges the DDC NCO when the
-//     phase tracker keeps stepping in one direction, improving external-carrier
-//     tolerance without changing the fixed-frequency configuration interface.
+//   - A bounded decision-directed Costas-like PI path nudges the DDC NCO while
+//     the coarse blind search checks candidate frequency regions.
 // -----------------------------------------------------------------------------
 module qpsk_rx_fixed_demod #(
     parameter integer ADC_DW = 10,
@@ -63,10 +62,15 @@ localparam integer TIMING_TRACK_DEADBAND = 8;
 localparam signed [17:0] DD_ERR_DEADBAND = 18'sd12;
 localparam signed [12:0] DD_ACC_LIMIT = 13'sd96;
 localparam integer DD_ERR_SHIFT = 4;
+localparam integer DD_FREQ_ERR_SHIFT = 5;
+localparam signed [17:0] DD_FREQ_STEP_LIMIT = 18'sd48;
 localparam integer FREQ_CORR_W = 16;
-localparam signed [FREQ_CORR_W-1:0] FREQ_CORR_STEP = 16'sd16;
 localparam signed [FREQ_CORR_W-1:0] FREQ_CORR_MAX = 16'sd8192;
 localparam signed [FREQ_CORR_W-1:0] FREQ_CORR_MIN = -16'sd8192;
+localparam signed [FREQ_CORR_W:0] FREQ_CORR_MAX_EXT =
+    {FREQ_CORR_MAX[FREQ_CORR_W-1], FREQ_CORR_MAX};
+localparam signed [FREQ_CORR_W:0] FREQ_CORR_MIN_EXT =
+    {FREQ_CORR_MIN[FREQ_CORR_W-1], FREQ_CORR_MIN};
 localparam signed [FREQ_CORR_W-1:0] ACQ_FREQ_STEP = 16'sd512;
 localparam signed [FREQ_CORR_W-1:0] ACQ_FREQ_MAX = 16'sd4096;
 localparam [4:0] ACQ_FREQ_LAST_IDX = 5'd16;
@@ -164,7 +168,7 @@ reg [1:0] corr_sym_base_q;
 reg corr_update_pending;
 reg signed [12:0] dd_phase_acc;
 reg dd_nco_step_pending;
-reg dd_nco_step_up;
+reg signed [FREQ_CORR_W-1:0] dd_nco_step;
 reg blind_phase_guard_set_pending;
 reg [1:0] blind_prev_sym;
 reg blind_prev_sym_valid;
@@ -429,6 +433,43 @@ function [17:0] abs18;
     end
 endfunction
 
+function signed [FREQ_CORR_W-1:0] limit_costas_freq_step;
+    input signed [17:0] err;
+    reg signed [17:0] shifted;
+    begin
+        shifted = err >>> DD_FREQ_ERR_SHIFT;
+        if ((err > DD_ERR_DEADBAND) && (shifted == 18'sd0)) begin
+            shifted = 18'sd1;
+        end
+
+        if (shifted > DD_FREQ_STEP_LIMIT) begin
+            limit_costas_freq_step = DD_FREQ_STEP_LIMIT[FREQ_CORR_W-1:0];
+        end else if (shifted < -DD_FREQ_STEP_LIMIT) begin
+            shifted = -DD_FREQ_STEP_LIMIT;
+            limit_costas_freq_step = shifted[FREQ_CORR_W-1:0];
+        end else begin
+            limit_costas_freq_step = shifted[FREQ_CORR_W-1:0];
+        end
+    end
+endfunction
+
+function signed [FREQ_CORR_W-1:0] sat_freq_corr_add;
+    input signed [FREQ_CORR_W-1:0] value;
+    input signed [FREQ_CORR_W-1:0] step;
+    reg signed [FREQ_CORR_W:0] sum_ext;
+    begin
+        sum_ext = {value[FREQ_CORR_W-1], value} +
+                  {step[FREQ_CORR_W-1], step};
+        if (sum_ext > FREQ_CORR_MAX_EXT) begin
+            sat_freq_corr_add = FREQ_CORR_MAX;
+        end else if (sum_ext < FREQ_CORR_MIN_EXT) begin
+            sat_freq_corr_add = FREQ_CORR_MIN;
+        end else begin
+            sat_freq_corr_add = sum_ext[FREQ_CORR_W-1:0];
+        end
+    end
+endfunction
+
 function [1:0] gray_seq4;
     input [1:0] idx;
     begin
@@ -584,7 +625,7 @@ always @(posedge clk) begin
         corr_update_pending <= 1'b0;
         dd_phase_acc     <= 13'sd0;
         dd_nco_step_pending <= 1'b0;
-        dd_nco_step_up   <= 1'b0;
+        dd_nco_step      <= {FREQ_CORR_W{1'b0}};
         blind_phase_guard_set_pending <= 1'b0;
         blind_prev_sym    <= 2'b00;
         blind_prev_sym_valid <= 1'b0;
@@ -674,7 +715,7 @@ always @(posedge clk) begin
         corr_update_pending <= 1'b0;
         dd_phase_acc     <= 13'sd0;
         dd_nco_step_pending <= 1'b0;
-        dd_nco_step_up   <= 1'b0;
+        dd_nco_step      <= {FREQ_CORR_W{1'b0}};
         blind_phase_guard_set_pending <= 1'b0;
         blind_prev_sym    <= 2'b00;
         blind_prev_sym_valid <= 1'b0;
@@ -708,25 +749,14 @@ always @(posedge clk) begin
         if (acq_apply_best_pending && !rot_dec_valid) begin
             acq_apply_best_pending <= 1'b0;
             dd_nco_step_pending <= 1'b0;
+            dd_nco_step <= {FREQ_CORR_W{1'b0}};
             nco_freq_corr <= acq_best_freq;
             phase_bin <= acq_best_phase_bin;
             dd_phase_acc <= 13'sd0;
             blind_prev_sym_valid <= 1'b0;
         end else if (dd_nco_step_pending && !rot_dec_valid) begin
             dd_nco_step_pending <= 1'b0;
-            if (dd_nco_step_up) begin
-                if (nco_freq_corr <= (FREQ_CORR_MAX - FREQ_CORR_STEP)) begin
-                    nco_freq_corr <= nco_freq_corr + FREQ_CORR_STEP;
-                end else begin
-                    nco_freq_corr <= FREQ_CORR_MAX;
-                end
-            end else begin
-                if (nco_freq_corr >= (FREQ_CORR_MIN + FREQ_CORR_STEP)) begin
-                    nco_freq_corr <= nco_freq_corr - FREQ_CORR_STEP;
-                end else begin
-                    nco_freq_corr <= FREQ_CORR_MIN;
-                end
-            end
+            nco_freq_corr <= sat_freq_corr_add(nco_freq_corr, dd_nco_step);
         end
         if (blind_phase_guard_set_pending && !rot_dec_valid) begin
             blind_phase_guard_set_pending <= 1'b0;
@@ -870,11 +900,6 @@ always @(posedge clk) begin
                         blind_phase_guard_set_pending <= 1'b1;
                     end
                     dd_phase_acc <= dd_acc_next - DD_ACC_LIMIT;
-                    if (track_locked || blind_locked || pattern_lock_now ||
-                        (blind_score_next >= BLIND_LOCK_THRESHOLD)) begin
-                        dd_nco_step_pending <= 1'b1;
-                        dd_nco_step_up <= 1'b1;
-                    end
                 end else if (dd_acc_next <= -DD_ACC_LIMIT) begin
                     phase_bin <= phase_bin - 4'd1;
                     if (blind_train_active && !track_locked && !blind_locked &&
@@ -882,17 +907,20 @@ always @(posedge clk) begin
                         blind_phase_guard_set_pending <= 1'b1;
                     end
                     dd_phase_acc <= dd_acc_next + DD_ACC_LIMIT;
-                    if (track_locked || blind_locked || pattern_lock_now ||
-                        (blind_score_next >= BLIND_LOCK_THRESHOLD)) begin
-                        dd_nco_step_pending <= 1'b1;
-                        dd_nco_step_up <= 1'b0;
-                    end
                 end else begin
                     dd_phase_acc <= dd_acc_next;
+                end
+
+                if ((track_locked || blind_locked || pattern_lock_now ||
+                     (blind_score_next >= BLIND_LOCK_THRESHOLD)) &&
+                    blind_symbol_confident && (dd_abs_phase_err > DD_ERR_DEADBAND)) begin
+                    dd_nco_step_pending <= 1'b1;
+                    dd_nco_step <= limit_costas_freq_step(dd_phase_err);
                 end
             end else begin
                 dd_phase_acc <= 13'sd0;
                 dd_nco_step_pending <= 1'b0;
+                dd_nco_step <= {FREQ_CORR_W{1'b0}};
             end
 
             if (blind_train_active && !track_locked && !blind_locked &&
@@ -920,6 +948,7 @@ always @(posedge clk) begin
                     blind_prev_sym_valid <= 1'b0;
                     dd_phase_acc <= 13'sd0;
                     dd_nco_step_pending <= 1'b0;
+                    dd_nco_step <= {FREQ_CORR_W{1'b0}};
                     if (acq_freq_idx >= ACQ_FREQ_LAST_IDX) begin
                         acq_freq_idx <= 5'd0;
                         acq_freq_wrapped <= 1'b1;
@@ -955,6 +984,7 @@ always @(posedge clk) begin
                 acq_symbol_score_valid <= 1'b0;
                 acq_apply_best_pending <= 1'b0;
                 dd_nco_step_pending <= 1'b0;
+                dd_nco_step <= {FREQ_CORR_W{1'b0}};
                 blind_phase_guard_set_pending <= 1'b0;
                 nco_freq_corr <= {FREQ_CORR_W{1'b0}};
                 blind_phase_guard <= 5'd0;

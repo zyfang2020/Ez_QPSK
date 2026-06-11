@@ -27,17 +27,17 @@
 - 已完成：新增 PL 侧 `qpsk_rx_fixed_demod` 在线解调分支，并通过本地 TX loopback 仿真恢复 Gray 序列。
 - 已完成：为 RX demod 增加 decision-directed 相位微调、锁定迟滞和轻量 early/late 定时跟踪，并通过带相位偏移、`3 kHz` 残余频偏、符号定时相位偏移和 ADC DC 的进阶仿真。
 - 已完成：新增外部输入漂移仿真，使用独立 `2.010 Msym/s` QPSK 源和 TX 参考校验，验证 RX 能跟随外部符号钟偏差。
-- 已完成：新增随机外部 QPSK 仿真，验证 RX 在没有本地 Gray 循环先验、带 `+15 kHz/-15 kHz` 残余载波偏差、慢幅度/DC 漂移和 ADC 采样噪声时可通过锁前频偏扫描与盲质量锁定恢复符号，并确认锁后 NCO 频偏微调参与工作。
+- 已完成：新增随机外部 QPSK 仿真，验证 RX 在没有本地 Gray 循环先验、带 `+15 kHz/-15 kHz` 残余载波偏差、慢幅度/DC 漂移和 ADC 采样噪声时可通过锁前频偏扫描与盲质量锁定恢复符号，并确认锁后 Costas-like PI 载波细调参与工作。
 - 已完成：导出 `rx_demod_bit/rx_demod_lock` 到 J11 debug 管脚，便于真实外部输入上板时直接观测判决位与锁定状态。
 - 已完成：新增外部 RX 上板模式脚本，可在不重画 BD 的情况下把固定配置切到 `FIXED_TX_EN=0/FIXED_RX_EN=1`，用于外部 QPSK 信号灌 ADC 时关闭本地 DAC 发射。
 - 已完成：新增顶层 external RX 正/负频偏仿真，验证 `pl_comm_top_fixed_cfg` 在 TX 关闭时 DAC 保持回零，外部 PRBS QPSK ADC 激励可经顶层 RX demod 盲锁恢复，并且 J11 debug 输出与内部 lock/bit 一致。
-- 已完成：新增并验证 external RX bitstream batch 构建，产物输出到 `artifacts/external_rx/`；最新 route/write_bitstream 通过，setup slack `0.169 ns`、hold slack `0.047 ns`，`.ltx` 已包含 ILA `probe2` 的 `rx_demod_dbg_bus[95:0]`。
+- 已完成：新增并验证 external RX bitstream batch 构建，产物输出到 `artifacts/external_rx/`；最新 Costas-like RTL 版 route/write_bitstream 通过，setup slack `0.129 ns`、hold slack `0.047 ns`，`.ltx` 已包含 ILA `probe2` 的 `rx_demod_dbg_bus[95:0]`。
 - 已完成：新增 external RX ILA 抓取脚本，可连接 Hardware Manager、可选烧录 external RX bitstream，并把 ILA 数据导出为 CSV。
 - 已完成：新增 external RX ILA CSV 解码工具，可从 Hardware Manager 导出的 `probe2` 数据中解出 lock ratio、lock score、I/Q、timing phase、NCO 频偏校正和符号统计。
 - 已完成：新增 external RX 一键板级检查脚本，可串联烧录、ILA 抓取和 `--check-external-rx` 解码阈值检查。
 - 已完成：新增本地 `loopback_prbs` 上板模式，可把内部 QPSK TX 从固定 Gray 循环切到 PRBS7 符号流，用于观察非周期符号工况下的 ADC 幅度、I/Q 活动和硬判决分布。
 - 已完成：`loopback_prbs` 本地模拟回环上板验证通过。当前路径为 `PL TX -> DAC -> 外部滤波/放大链路 -> ADC -> PL RX demod`，最新版 ILA 三次抓取均通过 `--check-external-rx`。
-- 已完成：刷新 `external_rx` 带 bitstream XSA 并通过 Vitis smoke build，可用于更新/重导入 PS 侧软件工程。
+- 已完成：刷新 `external_rx` 带 bitstream XSA 并通过 Vitis smoke build，可用于更新/重导入 PS 侧软件工程；最新 smoke 工作区为 `Vitis_WS/codex_xsa_smoke_external_rx_costas`。
 - 当前外部源状态：最新 `external_rx` 上板 ILA 可捕获，但 ADC 输入仅为近中点小噪声，`external_rx_board_check.csv` 显示 `adc_raw_span=3`、`lock_ratio=0`；这说明当前没有独立外部 QPSK 信号送入 ADC，或者外部输入链路尚未打开。
 - 当前工程定位：保留原 BD/PS/DMA 主结构，在 ADC capture 后并联在线解调 debug 支路。
 - 未完成：真实外部 QPSK 发射机上板联调，更完整的盲锁定/误码统计，协议化上位机数据接入。
@@ -120,7 +120,7 @@
 ### 2.6 当前注意事项
 
 - 当前在线解调已覆盖本地固定 Gray loopback 仿真，不等同于外部发射机全场景锁定。
-- 当前 decision-directed 相位微调、锁前频偏扫描、锁后 NCO 频偏微调和 early/late 定时跟踪已覆盖固定频点正/负残余频偏与仿真外部符号率漂移，仍不等同于真实射频环境的完整盲同步链。
+- 当前 decision-directed 相位微调、锁前频偏扫描、锁后 Costas-like PI 载波细调和 early/late 定时跟踪已覆盖固定频点正/负残余频偏与仿真外部符号率漂移，仍不等同于真实射频环境的完整盲同步链。
 - 当前 RX demod 优先使用本地 Gray 相关锁定；若长期不能匹配该测试模式，会进入盲锁分支，用星座置信度和 decision-directed 相位误差形成外部随机数据的 lock。ILA 中的 `rx_demod_dbg_lock_score` 显示 Gray/盲锁两路质量分数中的较高值。
 - `loopback_prbs` 是随机符号压力测试模式，也已作为本地模拟回环的阶段性硬件验收通过。2026-06-11 最新 ILA 三次抓取 `Tool/data/local_prbs_loopback_post_fix_ila_00..02.csv` 均通过 `--check-external-rx`：`lock_ratio=1`，`lock_score=255`，有效符号数 `21/20/21`，ADC span `964/1000/976`，符号熵约 `1.88..1.99` bits。PRBS 下 Gray-cycle 匹配率低是预期现象，不作为失败依据；当前幅度接近满量程，后续若要留余量可适当降低模拟链路增益。
 - `external_rx` 会关闭本地 DAC TX。2026-06-11 最新 external RX ILA 抓取 `Tool/data/external_rx_board_check.csv` 显示 ADC span 只有 `3` 且 `lock_ratio=0`，这不是当前 RTL 判定失败的主要证据，而是 ADC 端没有足够外部 QPSK 输入幅度的证据。接入真实外部源后，优先确认 ADC span 明显大于几十个 LSB，再看 lock 和符号统计。
@@ -129,7 +129,7 @@
 - 当前“ADC->AXI->DDR”链路仍保留，在线解调支路不替代原始采样搬运。
 - `qpsk_sym_*` 为后续协议化输入预留接口，当前主要使用内部 `qpsk_test_gen`。
 - RX 侧 AXIS 口通常在 Vivado BD 内连接 DMA，不作为外部引脚导出。
-- 外部 QPSK 输入仍需要继续升级 Costas/decision-directed 相位环和 Gardner/early-late 定时恢复。
+- 外部 QPSK 输入仍需要继续升级锁前宽频偏捕获和 Gardner/early-late 定时恢复；`25..35 kHz` 级宽残余载波偏差仍可能选到假候选，不能按已验收能力使用。
 
 ### 2.7 本机 Xilinx 工具版本（Windows）
 
@@ -273,6 +273,6 @@
 2. 接入外部源后运行 `scripts/capture_external_rx_ila.tcl` 抓取 ILA CSV，再用 `Tool/python/decode_rx_demod_ila.py --check-external-rx` 解码 `rx_demod_dbg_bus`。第一关先看 ADC span 是否明显大于几十个 LSB；若仍只有个位数，先查外部源、模拟链路、ADC 输入偏置/供电和连接。
 3. 若 ADC span 正常，再检查 lock ratio、lock score、I/Q 幅度、timing phase 和 `nco_freq_corr` Hz 换算值；若外部源发 Gray 循环，则追加 `--check-gray-cycle` 做更接近验收的符号序列检查。
 4. 外部信号建议先从约 `7 MHz` 载波、`2 Msym/s`、中等 ADC 幅度开始；若 `rx_demod_lock` 不稳定，优先同时抓取 ADC 原始样本做离线频谱/星座交叉验证。
-5. 针对真实外部 QPSK 输入继续强化盲锁定范围、误码统计和 ILA/离线交叉验证。
+5. 针对真实外部 QPSK 输入继续强化锁前宽频偏捕获、误码统计和 ILA/离线交叉验证；当前锁后 Costas-like PI 已通过 `+15 kHz/-15 kHz` 回归，但不能替代完整外部同步链。
 6. 保留 ADC 原始样本 DMA 搬运，用离线脚本交叉验证在线判决。
 7. 后续再进入协议化上位机数据输入与误码统计闭环。
