@@ -73,6 +73,14 @@
 
 默认 ELF 是最新 external-RX smoke build 的 `baremetal_dma_rx_smoke.elf`；可用 `-elf <path>` 覆盖。若 `download_ps_app.tcl -list` 没有列出 APU/Cortex-A9 target，则还不能下载运行 PS 程序，需要先解决 PS JTAG target 可见性。
 
+板 A 上更接近 Vitis GUI Debug 的 batch 入口是 Vitis 生成的脚本：
+
+```powershell
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" -eval "source D:/Project/ProjectVivado/Ez_QPSK/Vitis_WS/Data_Transfer/_ide/scripts/debugger_dma_transfer-default.tcl"
+```
+
+这个脚本会执行 system reset、烧 `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit`、`loadhw`、`ps7_init/ps7_post_config`、下载 `Vitis_WS/dma_transfer/Debug/dma_transfer.elf`，并在 `main` 处设断点。若只用 Vivado 烧 PL 而不跑这一步，PS `FCLK_CLK0` 可能不会启动，ILA/debug_hub 也可能检测不到。
+
 ### 5. RX 输入预检与完整检查
 
 ```powershell

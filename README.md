@@ -217,6 +217,7 @@
   - 2026-06-12 已尝试把该 target 临时烧成 `new_interface_rx`：PL 下载成功并到 DONE，但 Hardware Manager 没检测到 `dbg_hub` / ILA，XSCT 仍没有 APU/Cortex-A9 target 可用于初始化 PS/FCLK，因此没有抓到 ADC 噪声 CSV。这个结果还不能确认 `210512180081` 是否就是新接口 RX 板，只能说明当前 PS/FCLK debug clock 路径未运行或 XSCT 不可达。
   - 2026-06-12 追加确认：前一次只烧了 PL，没有下载运行 Vitis PS 程序；已新增 `scripts/download_ps_app.tcl` 用于 `ps7_init`、下载 ELF 并 `con`。实际运行 `download_ps_app.tcl -list`、XSCT/XSDB `targets` 和 `jtag targets` 时仍为空，所以没有完成 PS ELF 下载。后续需先让 Vitis System Debugger 能看到 APU/Cortex-A9 target。
   - 2026-06-12 实验室单接新引脚定义板时，Vivado 仍只看到 Digilent cable `210512180081`，但 FPGA DNA 变为 `3A16927471382023`，说明 cable serial 更像下载器身份，DNA 更适合区分板子。该板已成功烧入 `new_interface_rx`（DONE），但仍未检测到 `dbg_hub` / ILA；`download_ps_app.tcl -list` 仍没有 APU/Cortex-A9 target，所以 PS ELF 尚未下载运行。
+  - 2026-06-12 板 A 调试确认：之前 Vitis launch 指向旧的 `zynq_dma` bit，导致 PS DMA 程序和当前 PL/BD 状态不匹配，容易在 DMA 访问处跑飞。把 Vitis 生成的 debug Tcl 改为使用 `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit` 后，可用 XSCT batch 复刻 GUI 流程：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" -eval "source D:/Project/ProjectVivado/Ez_QPSK/Vitis_WS/Data_Transfer/_ide/scripts/debugger_dma_transfer-default.tcl"`。该流程会 reset、`fpga -file`、`loadhw`、`ps7_init`、下载 `dma_transfer.elf` 并在 `main` 处设断点；运行后 Vivado 能看到板 A 已 program 且 ILA count 为 `1`。
 - 初始化指定板子的 PS/FCLK：
   - 列出 XSCT targets：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -list`
   - 初始化某块板：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <xsct_target_id_or_name_pattern>`

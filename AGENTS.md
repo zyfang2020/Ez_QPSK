@@ -296,6 +296,28 @@ powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1
     with inactive PS `FCLK_CLK0`.
   - Elevated `scripts/download_ps_app.tcl -list` still returned no XSCT
     APU/Cortex-A9 targets, so the PS ELF could not be downloaded/run yet.
+- 2026-06-12 Board A Vitis debug/batch finding:
+  - The earlier Vitis launch had been pointing at an old `zynq_dma` bitstream.
+    With that old PL image, the PS DMA app could run into a mismatched DMA/BD
+    hardware state and fail around DMA access.
+  - After changing the launch-generated debug Tcl to use
+    `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit`, the Vitis batch
+    style command succeeded:
+
+```powershell
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" -eval "source D:/Project/ProjectVivado/Ez_QPSK/Vitis_WS/Data_Transfer/_ide/scripts/debugger_dma_transfer-default.tcl"
+```
+
+  - This Vitis-generated script performs the fuller GUI-like flow: select APU,
+    system reset, select JTAG cable, `fpga -file`, `loadhw`, `ps7_init`,
+    `ps7_post_config`, download `dma_transfer.elf`, and set a breakpoint at
+    `main`.
+  - After this batch flow, Vivado listed Board A as programmed and detected
+    `1` ILA core. External standalone `download_ps_app.tcl -list` may still
+    print no targets, so prefer the Vitis-generated debug Tcl flow for Board A
+    when reproducing the GUI behavior.
+  - If Vivado warns that probes are not associated, bind:
+    `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.ltx`.
 
 Hardware result on 2026-06-10:
 
