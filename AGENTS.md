@@ -452,19 +452,22 @@ Hardware result on 2026-06-10:
   - `artifacts/external_rx/Ez_QPSK_external_rx.ltx`
   - `artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa`
 - `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx_wide_acq` passed for the refreshed wide-acquisition external-RX XSA.
-- Programming the refreshed `external_rx` image and capturing ILA succeeded, but the current ADC input was only near-midscale noise:
+- Programming the refreshed `external_rx` image and capturing ILA succeeded, but at that time the ADC input was only near-midscale noise:
   - `Tool/data/external_rx_latest_ila_00..02.csv`
   - `adc_raw_span=3/2/2`
   - `lock_ratio=0`
   - `i_mean_abs_when_valid` and `q_mean_abs_when_valid` were about `1`
   - This is expected if no separate external QPSK source is feeding the ADC, because `external_rx` disables local DAC TX.
-- The new one-command board check reproduced the same current external-RX condition:
+- The new one-command board check reproduced the same then-current external-RX condition:
   - `scripts/check_external_rx_board.ps1 -Repeat 1`
   - `Tool/data/external_rx_board_check.csv`
   - `adc_raw_span=3`
   - `lock_ratio=0`
   - check failures: `lock_ratio 0 < 0.5`, `adc_raw_span 3 < 16`
-  - This confirms the current blocker for true `external_rx` validation is missing/insufficient independent ADC input signal, not the capture/decode flow.
+  - This confirmed the blocker at that point was missing/insufficient independent
+    ADC input signal, not the capture/decode flow. Later two-board
+    `new_interface_rx` checks passed after the receiver PS/FCLK was initialized
+    through Vitis.
 - Re-run on 2026-06-11 with `scripts/check_external_rx_board.ps1 -Repeat 1 -WarmupMs 500` still captured/programmed correctly but showed the same external input issue:
   - `Tool/data/external_rx_board_check.csv`
   - `adc_raw_span=2`, `adc_ac_rms=0.548365`

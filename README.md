@@ -98,7 +98,7 @@
   - 角色固定为“原 AX7020 风格接口 TX -> 信道 -> 新 HS 接口 ADC/RX demod”，不要把新接口当 TX 使用。
   - 板卡命名从 2026-06-12 起固定：板 A 是原 AX7020 风格引脚/接口板，用作 TX，Vivado 观测 FPGA DNA 为 `3A1691221322147B`；板 B 是新 HS 引脚/接口板，用作 RX，Vivado 观测 FPGA DNA 为 `3A16927471382023`。Digilent cable serial `210512180081` 会随下载器移动，不单独作为板卡身份依据。
   - 原接口 TX 推荐先用 `original_tx_prbs`，新接口 RX 使用 `new_interface_rx`。
-  - 当前只确认了新接口高频 ADC/DAC 引脚；新板的非 HS `clk_50M` / debug 管脚尚未单独确认。实物下载前请确认 Bank 35 VCCO 与 `LVCMOS33` 匹配。
+  - 当前已经确认新 HS 接口 RX 的 ADC 输入、PS `FCLK_CLK0` 驱动的 ILA/debug 路径和 PL demod lock；新板的非 HS `clk_50M` / 外接 debug 管脚仍未单独作为板级接口验收。若后续启用这些新板非 HS 管脚，请先确认 Bank 35 VCCO 与 `LVCMOS33` 匹配。
 
 ### 2.4 目录与文件作用（按工程根目录）
 
@@ -217,8 +217,8 @@
   - 烧原接口 TX：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts\original_tx_prbs\Ez_QPSK_original_tx_prbs.bit -ltx artifacts\original_tx_prbs\Ez_QPSK_original_tx_prbs.ltx -target <tx_target>`
   - 烧新接口 RX：`& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts\new_interface_rx\Ez_QPSK_new_interface_rx.bit -ltx artifacts\new_interface_rx\Ez_QPSK_new_interface_rx.ltx -target <rx_target>`
   - 2026-06-11 单线观测到的 target 是 `localhost:3121/xilinx_tcf/Digilent/210512180081`，`xc7z020_1` 的 EFUSE DNA 为 `3A1691221322147B`；这只是身份指纹，需通过单板插拔或实物标签确认它对应原接口 TX 还是新接口 RX。
-  - 2026-06-12 复查时 Vivado 仍只看到这一块 target，`xc7z020_1` 未烧录且 ILA count 为 `0`；XSCT `init_ps7_fclk.tcl -list` 提升权限后能启动但没有列出可初始化的 APU/Cortex-A9 target。因此当前不能自动跑两板烧录/检查流程，需要先让两块板同时可见，或用单板插拔确认这块 target 是否就是新接口 RX。
-  - 2026-06-12 已尝试把该 target 临时烧成 `new_interface_rx`：PL 下载成功并到 DONE，但 Hardware Manager 没检测到 `dbg_hub` / ILA，XSCT 仍没有 APU/Cortex-A9 target 可用于初始化 PS/FCLK，因此没有抓到 ADC 噪声 CSV。这个结果还不能确认 `210512180081` 是否就是新接口 RX 板，只能说明当前 PS/FCLK debug clock 路径未运行或 XSCT 不可达。
+  - 2026-06-12 复查时 Vivado 仍只看到这一块 target，`xc7z020_1` 未烧录且 ILA count 为 `0`；XSCT `init_ps7_fclk.tcl -list` 提升权限后能启动但没有列出可初始化的 APU/Cortex-A9 target。因此当时不能自动跑两板烧录/检查流程，需要先让两块板同时可见，或用单板插拔确认这块 target 是否就是新接口 RX。
+  - 2026-06-12 早先曾把该 target 临时烧成 `new_interface_rx`：PL 下载成功并到 DONE，但 Hardware Manager 没检测到 `dbg_hub` / ILA，XSCT 仍没有 APU/Cortex-A9 target 可用于初始化 PS/FCLK，因此没有抓到 ADC 噪声 CSV。后续通过 FPGA DNA 确认该 target 是新接口 RX 板，并在 Vitis 初始化 PS/FCLK 后用 `-NoProgram` 抓取通过。
   - 2026-06-12 追加确认：前一次只烧了 PL，没有下载运行 Vitis PS 程序；已新增 `scripts/download_ps_app.tcl` 用于 `ps7_init`、下载 ELF 并 `con`。实际运行 `download_ps_app.tcl -list`、XSCT/XSDB `targets` 和 `jtag targets` 时仍为空，所以没有完成 PS ELF 下载。后续需先让 Vitis System Debugger 能看到 APU/Cortex-A9 target。
   - 2026-06-12 实验室单接新引脚定义板时，Vivado 仍只看到 Digilent cable `210512180081`，但 FPGA DNA 变为 `3A16927471382023`，说明 cable serial 更像下载器身份，DNA 更适合区分板子。该板已成功烧入 `new_interface_rx`（DONE）；纯 Vivado 烧 PL 后曾因 PS/FCLK 未运行而检测不到 ILA，随后用户在 Vitis 中选择接收端 bit 并初始化 PS 后，用 `-NoProgram` 抓取通过。
   - 2026-06-12 板 A 调试确认：之前 Vitis launch 指向旧的 `zynq_dma` bit，导致 PS DMA 程序和当前 PL/BD 状态不匹配，容易在 DMA 访问处跑飞。把 Vitis 生成的 debug Tcl 改为使用 `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit` 后，可用 XSCT batch 复刻 GUI 流程：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" -eval "source D:/Project/ProjectVivado/Ez_QPSK/Vitis_WS/Data_Transfer/_ide/scripts/debugger_dma_transfer-default.tcl"`。该流程会 reset、`fpga -file`、`loadhw`、`ps7_init`、下载 `dma_transfer.elf` 并在 `main` 处设断点；运行后 Vivado 能看到板 A 已 program 且 ILA count 为 `1`。
@@ -332,12 +332,11 @@
 - 显式声明异步时钟组，避免错误跨域收敛。
 - 顶层控制口（`*_en/*_sel/*_cfg`）必须有明确驱动来源，禁止悬空。
 
-### 3.6 当前阶段下一步（对齐阶段 2）
+### 3.6 当前阶段收尾与后续方向（对齐阶段 2）
 
-1. 本地模拟回环 `loopback_prbs` 已通过，`external_rx` 最新 bitstream/XSA/Vitis smoke 也已就绪；下一步先把独立外部 QPSK 源真正送入 ADC，再用 J11 `rx_demod_bit/rx_demod_lock` 和 ILA 做可观测验证。
-2. 接入外部源后优先运行 `scripts/check_external_rx_board.ps1 -SignalOnly` 做输入预检，或者用 `scripts/wait_external_rx_signal.ps1 -RunFullCheck` 让脚本轮询等待信号出现后自动进入完整检查；第一关先看 ADC span 是否明显大于几十个 LSB，并看三次抓取是否稳定。第二关看 `adc_spectrum_peak_hz` 和 `adc_spectrum_band_power_ratio` 是否说明能量在预期载波附近。若 ADC span 仍只有个位数，先查外部源、RX 模拟链路断点、ADC 输入偏置/供电和连接；这类结果先按物理输入 blocker 处理，不作为解调算法失败。
-3. 若 ADC span 正常，再运行不带 `-SignalOnly` 的完整 external-RX 检查，观察 lock ratio、lock score、I/Q 幅度、timing phase 和 `nco_freq_corr` Hz 换算值；已知外部源频偏方向时可用 `-ExpectNcoSign` 或 `--expect-nco-sign` 把 NCO 方向纳入 PASS/FAIL；若外部源发 Gray 循环，则追加 `--check-gray-cycle` 做更接近验收的符号序列检查。
-4. 外部信号建议先从约 `7 MHz` 载波、`2 Msym/s`、中等 ADC 幅度开始；若 `rx_demod_lock` 不稳定，优先同时抓取 ADC 原始样本做离线频谱/星座交叉验证。
-5. 针对真实外部 QPSK 输入继续强化锁前宽频偏捕获、误码统计和 ILA/离线交叉验证；当前锁后 Costas-like PI 和候选质量评分已通过 demod 单元与顶层 external-RX 的 `+15 kHz/-15 kHz`、`+35 kHz/-35 kHz` 回归，以及锁后正/负向漂移仿真回归，但不能替代完整外部同步链。
-6. 保留 ADC 原始样本 DMA 搬运，用离线脚本交叉验证在线判决。
-7. 后续再进入协议化上位机数据输入与误码统计闭环。
+1. 本地模拟回环 `loopback_prbs` 已通过；两板外部输入也已通过：板 A 原 AX7020 风格接口发 `original_tx_prbs`，板 B 新 HS 接口跑 `new_interface_rx`，Vitis 初始化 PS/FCLK 后用 `-NoProgram` 连续三次完整 ILA 检查均 `lock_ratio=1`、`lock_score=255`。
+2. 复现实验时先保证 PS/FCLK 已运行。若由 Vitis 已经烧入接收端 bit 并初始化 PS，后续抓取建议使用 `scripts/check_external_rx_board.ps1 -Mode new_interface_rx -NoProgram`，避免重烧 PL 后丢失 PS/FCLK 状态。
+3. 若重新接线或换增益，仍先运行 `-SignalOnly` 做输入预检：第一关看 ADC span/RMS 是否明显高于空输入，第二关看 `adc_spectrum_peak_hz` 和 `adc_spectrum_band_power_ratio` 是否说明能量在预期载波附近。若 ADC span 仍只有个位数，优先查外部源、RX 模拟链路、ADC 输入偏置/供电和连接。
+4. 后续算法侧重点是更完整的误码/帧级统计、长时间稳定性、不同衰减/增益/残余频偏条件下的回归，以及更系统化的锁前宽频偏捕获和符号定时恢复验证。
+5. 保留 ADC 原始样本 DMA 搬运，用离线脚本交叉验证在线判决；后续再进入协议化上位机数据输入与误码统计闭环。
+6. 如果希望免去每次 Vitis 手动初始化 PS，可生成板 A/板 B 对应的 FSBL + bitstream + 最小 keepalive app 的 `BOOT.BIN`，先用 SD 卡验证，再考虑固化到 QSPI flash。

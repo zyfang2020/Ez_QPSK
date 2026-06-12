@@ -31,7 +31,7 @@ python Tool/python/decode_rx_demod_ila.py path\to\ila_export.csv --sample-rate-h
 
 外部输入第一轮验收可加 `--check-external-rx`，默认检查 `lock_ratio >= 0.50`、`valid_ratio >= 0.005`、`adc_raw_span >= 16`，失败时返回非零，便于把 ILA 抓取结果接入批处理脚本。
 
-摘要中会额外给出两个机器可读状态字段：`adc_input_state` 和 `rx_demod_state`。例如当前无外部输入时通常是 `too_small` / `waiting_for_adc_input`；本地 PRBS 回环通过时是 `active` / `locked`。一键脚本的聚合 JSON 也会统计这些状态。
+摘要中会额外给出两个机器可读状态字段：`adc_input_state` 和 `rx_demod_state`。空输入或链路未接通时通常是 `too_small` / `waiting_for_adc_input`；本地 PRBS 回环或已验证的两板外部输入通过时是 `active` / `locked`。一键脚本的聚合 JSON 也会统计这些状态。
 
 实际上板时更推荐先用一键脚本做两阶段检查。第一阶段只确认外部源是否真的进入 ADC：
 
