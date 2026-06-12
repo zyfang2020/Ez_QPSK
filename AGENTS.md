@@ -222,6 +222,18 @@ powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1
   `PL TX -> DAC -> external filter/analog path -> ADC -> PL RX demod`.
 - This requires both DA and AD paths to be working and uses `loopback` mode with TX and RX enabled.
 - Use `loopback_prbs` as the preferred random-symbol stress mode after Gray loopback. Current hardware evidence shows stable PRBS lock on the local analog path.
+- Local analog amplitude note from 2026-06-12:
+  - DAC full-scale output is about `2 Vpp`.
+  - The TX/output chain applies about `11x` gain after the DAC.
+  - The local ADC path sees an attenuated signal of about `1/7` of that
+    post-gain output, and the ADC full-scale input is also about `2 Vpp`.
+  - Therefore a full-scale DAC local loopback could present roughly
+    `2 Vpp * 11 / 7 = 3.1 Vpp` at the ADC input and can saturate or clip the
+    ADC. Treat near-full-scale local-loopback `adc_raw_span` as a gain/headroom
+    warning before blaming demod RTL.
+  - In true external two-board tests, channel attenuation is expected to reduce
+    the RX ADC amplitude, so the local-loopback saturation risk does not imply
+    the external-link signal will also be too large.
 - After local analog loopback is stable, switch to the two-board mode where the
   original AX7020-style interface transmits PRBS/Gray QPSK and the new high-speed
   interface receives in `new_interface_rx` mode.
@@ -272,6 +284,46 @@ powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1
     whether serial `210512180081` is the new-interface RX board; it only proves
     the PL can be programmed and that the PS/FCLK debug clock path is not active
     or not accessible through XSCT.
+- 2026-06-12 Board B new-interface RX bring-up attempt after the user connected
+  the receiver board:
+  - Vivado `scripts/list_hw_targets.tcl` saw one target
+    `localhost:3121/xilinx_tcf/Digilent/210512180081` / `xc7z020_1`.
+  - The FPGA EFUSE DNA was `3A16927471382023`, confirming this is Board B / the
+    new HS-interface RX board, not Board A.
+  - `scripts/check_external_rx_board.ps1 -Mode new_interface_rx -Target
+    localhost:3121/xilinx_tcf/Digilent/210512180081 -SignalOnly -Repeat 3
+    -WarmupMs 500` programmed
+    `artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.bit` and startup DONE
+    was HIGH.
+  - Vivado could not detect `dbg_hub` / ILA after programming
+    (`hardware ILA cores count: 0`), so no ADC CSV was captured.
+  - Elevated and normal-TEMP-relocated XSCT probes, plus XSDB probes, all
+    returned empty `targets` and `jtag targets`; no APU/Cortex-A9 target was
+    available for `ps7_init` / `ps7_post_config`.
+  - At this point, the blocker was PS/System-Debugger target visibility or PS
+    initialization on Board B. ADC input amplitude and demod lock could not be
+    diagnosed until PS `FCLK_CLK0` was active and ILA capture was possible. A
+    Vitis GUI launch or a board reset/boot-mode/power check was needed to expose
+    or initialize the PS/debug path.
+  - After the user configured/reran the Vitis debug flow with the receiver bit,
+    rerunning the board check with `-NoProgram` detected `1` ILA core and
+    successfully captured Board B. This confirms the earlier ILA failure was a
+    PS/FCLK initialization issue, not a bad `new_interface_rx` bitstream.
+  - `scripts/check_external_rx_board.ps1 -Mode new_interface_rx -Target
+    localhost:3121/xilinx_tcf/Digilent/210512180081 -SignalOnly -NoProgram
+    -Repeat 3 -WarmupMs 500` passed on all three captures:
+    `lock_ratio=1`, `adc_raw_span=337/347/338`,
+    `adc_ac_rms=91.0742/89.4501/91.3749`, and ADC spectral peaks around
+    `7.03/7.32/7.03 MHz`.
+  - Full `new_interface_rx` demod check also passed with `-NoProgram -Repeat 3
+    -WarmupMs 500`:
+    `Tool/data/new_interface_rx_board_check_00..02.csv`, `lock_ratio=1` for all
+    captures, `lock_score=255`, `valid_count=20/20/20`,
+    `adc_raw_span=318/334/356`, `adc_ac_rms=90.7801/90.827/92.6059`, and
+    `adc_spectrum_band_power_ratio=0.995932/0.995022/0.995544`.
+  - For follow-up captures after Vitis has already programmed PL and run PS,
+    prefer `check_external_rx_board.ps1 -Mode new_interface_rx -NoProgram` so the
+    PS/FCLK state is not disturbed.
 - 2026-06-12 PS download clarification:
   - The previous RX identity attempt only programmed the PL through Vivado; it
     did not download/run a Vitis PS ELF.
@@ -296,6 +348,9 @@ powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1
     with inactive PS `FCLK_CLK0`.
   - Elevated `scripts/download_ps_app.tcl -list` still returned no XSCT
     APU/Cortex-A9 targets, so the PS ELF could not be downloaded/run yet.
+  - This was later resolved by using Vitis to initialize PS/run the receiver-bit
+    debug configuration, then capturing with `-NoProgram`; see the Board B
+    `new_interface_rx` PASS notes above.
 - 2026-06-12 Board A Vitis debug/batch finding:
   - The earlier Vitis launch had been pointing at an old `zynq_dma` bitstream.
     With that old PL image, the PS DMA app could run into a mismatched DMA/BD
@@ -367,6 +422,15 @@ Hardware result on 2026-06-10:
   - `symbol_entropy_when_valid_bits=1.88417/1.98548/1.93871`
   - `adc_raw_span=964/1000/976`
   - ADC amplitude is close to full scale; if later captures show clipping, reduce analog gain before evaluating demod failures.
+- 2026-06-12 Board A TX-mode local ADC preflight with
+  `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit/.ltx` captured:
+  - `Tool/data/board_a_original_tx_prbs_local_adc_00..02.csv`
+  - ADC input was active with `adc_raw_span=894/965/925`,
+    `adc_ac_rms=234.068/238.398/234.692`, and coarse spectral peaks at about
+    `7.42/7.71/7.52 MHz`.
+  - `lock_ratio=0` is expected for this preflight because the original TX image
+    is used only to confirm Board A DAC/local ADC activity, not to validate RX
+    demod lock.
 - `scripts/run_external_rx_bitstream.tcl -tclargs external_rx` generated `artifacts/external_rx/Ez_QPSK_external_rx.bit` and `.ltx`.
 - `external_rx` implementation passed timing with setup slack `0.007 ns` and hold slack `0.048 ns`; setup is positive but very tight, so later carrier/timing-loop additions need timing attention.
 - `scripts/export_current_xsa.tcl -tclargs -include-bit -out artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa` exported an XSA carrying the matching external-RX bitstream.

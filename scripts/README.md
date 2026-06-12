@@ -89,9 +89,13 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mo
 
 # 输入存在后，做完整 lock/valid 检查
 powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode new_interface_rx -Target <rx_target>
+
+# 如果已在 Vitis 中烧入接收端 bit 并初始化 PS/FCLK，保留该状态直接抓 ILA
+powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode new_interface_rx -Target <rx_target> -NoProgram
 ```
 
 如果物理链路不确定，先用 `-SignalOnly -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5`。若 ADC span/RMS 仍只有个位数，优先查外部输入、RX 模拟链路、ADC 供电/偏置/连接。
+2026-06-12 板 B 验证时，纯 Vivado 烧 PL 后 ILA 不可见；用户在 Vitis 中选择 `Ez_QPSK_new_interface_rx.bit` 并初始化 PS 后，使用 `-NoProgram` 连续三次完整检查通过。
 
 ## PS/FCLK 没跑起来的常见原因
 
