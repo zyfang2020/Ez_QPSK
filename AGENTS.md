@@ -273,6 +273,19 @@ powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1
   - No PS ELF was downloaded because the System Debugger side did not expose an
     APU/Cortex-A9 target. Resolve XSCT/XSDB target visibility before expecting
     PS `FCLK_CLK0`, `dbg_hub`, or ILA capture to work.
+- 2026-06-12 lab single-board RX attempt:
+  - User connected only the new-pin-definition board.
+  - Vivado saw one target on the same Digilent cable serial
+    `210512180081`, but the FPGA DNA was now `3A16927471382023`
+    instead of the earlier `3A1691221322147B`. Treat cable serial as the
+    JTAG adapter identity and DNA as the board/device fingerprint.
+  - The board was programmed with
+    `artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.bit/.ltx`.
+  - Programming succeeded (`End of startup status: HIGH`).
+  - Vivado still could not detect `dbg_hub` / ILA after programming, consistent
+    with inactive PS `FCLK_CLK0`.
+  - Elevated `scripts/download_ps_app.tcl -list` still returned no XSCT
+    APU/Cortex-A9 targets, so the PS ELF could not be downloaded/run yet.
 
 Hardware result on 2026-06-10:
 

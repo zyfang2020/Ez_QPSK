@@ -215,6 +215,7 @@
   - 2026-06-12 复查时 Vivado 仍只看到这一块 target，`xc7z020_1` 未烧录且 ILA count 为 `0`；XSCT `init_ps7_fclk.tcl -list` 提升权限后能启动但没有列出可初始化的 APU/Cortex-A9 target。因此当前不能自动跑两板烧录/检查流程，需要先让两块板同时可见，或用单板插拔确认这块 target 是否就是新接口 RX。
   - 2026-06-12 已尝试把该 target 临时烧成 `new_interface_rx`：PL 下载成功并到 DONE，但 Hardware Manager 没检测到 `dbg_hub` / ILA，XSCT 仍没有 APU/Cortex-A9 target 可用于初始化 PS/FCLK，因此没有抓到 ADC 噪声 CSV。这个结果还不能确认 `210512180081` 是否就是新接口 RX 板，只能说明当前 PS/FCLK debug clock 路径未运行或 XSCT 不可达。
   - 2026-06-12 追加确认：前一次只烧了 PL，没有下载运行 Vitis PS 程序；已新增 `scripts/download_ps_app.tcl` 用于 `ps7_init`、下载 ELF 并 `con`。实际运行 `download_ps_app.tcl -list`、XSCT/XSDB `targets` 和 `jtag targets` 时仍为空，所以没有完成 PS ELF 下载。后续需先让 Vitis System Debugger 能看到 APU/Cortex-A9 target。
+  - 2026-06-12 实验室单接新引脚定义板时，Vivado 仍只看到 Digilent cable `210512180081`，但 FPGA DNA 变为 `3A16927471382023`，说明 cable serial 更像下载器身份，DNA 更适合区分板子。该板已成功烧入 `new_interface_rx`（DONE），但仍未检测到 `dbg_hub` / ILA；`download_ps_app.tcl -list` 仍没有 APU/Cortex-A9 target，所以 PS ELF 尚未下载运行。
 - 初始化指定板子的 PS/FCLK：
   - 列出 XSCT targets：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -list`
   - 初始化某块板：`& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <xsct_target_id_or_name_pattern>`
