@@ -40,12 +40,18 @@
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_external_rx_bitstream.tcl -tclargs loopback_prbs
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_external_rx_bitstream.tcl -tclargs external_rx
 
-# 两板链路：原 AX7020 风格接口做 TX，新 HS 接口做 RX
+# 两板链路：板 A/原 AX7020 风格接口做 TX，板 B/新 HS 接口做 RX
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_original_interface_tx_bitstream.tcl -tclargs prbs
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_new_interface_rx_bitstream.tcl
 ```
 
 `run_second_board_tx_bitstream.tcl` 已弃用并会报错，避免把新 HS 接口误当 TX。
+
+当前板卡指纹：
+
+- 板 A：原 AX7020 风格引脚/接口板，TX，FPGA DNA `3A1691221322147B`。
+- 板 B：新 HS 引脚/接口板，RX，FPGA DNA `3A16927471382023`。
+- Digilent cable serial `210512180081` 是下载器/线的身份，不能单独区分板卡。
 
 ### 4. 初始化 PS/FCLK
 

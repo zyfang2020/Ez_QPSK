@@ -208,6 +208,16 @@ powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1
 
 ## Board Bring-up Preference
 
+- Board identity naming from 2026-06-12:
+  - Board A: original AX7020-style pin/interface board. Use it as the TX side in
+    two-board tests. FPGA DNA observed by Vivado:
+    `3A1691221322147B`.
+  - Board B: new user-provided high-speed pin/interface board. Use it as the RX
+    side in two-board tests. FPGA DNA observed by Vivado:
+    `3A16927471382023`.
+  - The Digilent cable serial observed as `210512180081` can stay the same when
+    the cable is moved between boards, so do not use that serial alone as board
+    identity. Prefer FPGA DNA plus the physical connection.
 - For the next hardware validation step, prefer local analog loopback first:
   `PL TX -> DAC -> external filter/analog path -> ADC -> PL RX demod`.
 - This requires both DA and AD paths to be working and uses `loopback` mode with TX and RX enabled.
@@ -216,8 +226,8 @@ powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1
   original AX7020-style interface transmits PRBS/Gray QPSK and the new high-speed
   interface receives in `new_interface_rx` mode.
 - 2026-06-11 role correction:
-  - The original AX7020-style interface is the TX side.
-  - The new user-provided HS interface is the RX side.
+  - Board A / the original AX7020-style interface is the TX side.
+  - Board B / the new user-provided HS interface is the RX side.
   - `scripts/run_second_board_tx_bitstream.tcl` is intentionally deprecated and
     exits with an error to prevent accidentally treating the new interface as TX.
   - `scripts/run_original_interface_tx_bitstream.tcl -tclargs prbs` generated

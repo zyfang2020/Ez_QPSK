@@ -95,6 +95,7 @@
   - 新增高频 DAC/ADC 引脚约束 profile，映射用户提供的 `HS_DA_*` / `HS_AD_*` 到现有 `clk_dac/dac_data` 与 `clk_adc/adc_data` 顶层端口。
   - 不改 BD/PS 主结构；默认仍由 PS `FCLK_CLK0` 驱动 `clk_io`，再转发到 DAC/ADC。
   - 角色固定为“原 AX7020 风格接口 TX -> 信道 -> 新 HS 接口 ADC/RX demod”，不要把新接口当 TX 使用。
+  - 板卡命名从 2026-06-12 起固定：板 A 是原 AX7020 风格引脚/接口板，用作 TX，Vivado 观测 FPGA DNA 为 `3A1691221322147B`；板 B 是新 HS 引脚/接口板，用作 RX，Vivado 观测 FPGA DNA 为 `3A16927471382023`。Digilent cable serial `210512180081` 会随下载器移动，不单独作为板卡身份依据。
   - 原接口 TX 推荐先用 `original_tx_prbs`，新接口 RX 使用 `new_interface_rx`。
   - 当前只确认了新接口高频 ADC/DAC 引脚；新板的非 HS `clk_50M` / debug 管脚尚未单独确认。实物下载前请确认 Bank 35 VCCO 与 `LVCMOS33` 匹配。
 
