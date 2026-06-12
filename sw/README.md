@@ -25,14 +25,7 @@
 
 ## 命令行 XSA / BSP / 编译冒烟测试
 
-当前仓库提供一个不依赖 Vitis GUI app 模板的 smoke test：
-
-```powershell
-& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/export_current_xsa.tcl -tclargs -out artifacts\xsa\Ez_QPSK_current.xsa
-& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/test_vitis_xsa_build.tcl artifacts\xsa\Ez_QPSK_current.xsa Vitis_WS\codex_xsa_smoke_current
-```
-
-当前 external RX 带 bitstream XSA 的 smoke 入口：
+当前仓库提供一个不依赖 Vitis GUI app 模板的 smoke test。默认使用当前 external RX 带 bitstream XSA：
 
 ```powershell
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/export_current_xsa.tcl -tclargs -include-bit -out artifacts\xsa\Ez_QPSK_external_rx_with_bit.xsa
@@ -47,6 +40,8 @@
 4. 使用生成的 BSP 头文件/`libxil.a` 编译并链接 `sw/baremetal_dma_rx/main.c`。
 
 `sw/baremetal_dma_rx/lscript.ld` 是用于命令行 smoke build 的 Zynq DDR linker script；如果后续 PS DDR map 变化，应从 Vitis 重新生成并同步更新。
+
+Vitis GUI/Debug 流程中要确认 `Program FPGA` 使用当前阶段匹配的 bitstream。板 A 发射用 `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit`；板 B 接收用 `artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.bit`。不要继续使用早期 `zynq_dma` bitstream，否则 PS DMA 程序可能和当前 PL/BD 状态不匹配。
 
 ## Vitis 版本管理口径
 

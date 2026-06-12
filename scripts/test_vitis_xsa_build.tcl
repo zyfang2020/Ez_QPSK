@@ -12,7 +12,7 @@
 
 set script_dir [file normalize [file dirname [info script]]]
 set repo_root  [file normalize [file join $script_dir ".."]]
-set xsa_path   [file join $repo_root "zynq_dma_wrapper.xsa"]
+set xsa_path   [file join $repo_root "artifacts" "xsa" "Ez_QPSK_external_rx_with_bit.xsa"]
 set ws_dir     [file join $repo_root "Vitis_WS" "codex_xsa_smoke"]
 set src_dir    [file join $repo_root "sw" "baremetal_dma_rx"]
 set vitis_root "D:/Program_Files/Xilinx/Vitis/2020.2"

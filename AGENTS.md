@@ -104,7 +104,7 @@ For future automated work, run Vivado batch commands with escalation if the same
 - A command-line smoke test is available:
 
 ```powershell
-& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/test_vitis_xsa_build.tcl artifacts\xsa\Ez_QPSK_current.xsa Vitis_WS\codex_xsa_smoke_current
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/test_vitis_xsa_build.tcl artifacts\xsa\Ez_QPSK_external_rx_with_bit.xsa Vitis_WS\codex_xsa_smoke_external_rx_latest
 ```
 
 - The smoke test intentionally writes under ignored `Vitis_WS/`, regenerates standalone BSP/FSBL from the XSA, and links `sw/baremetal_dma_rx/main.c` into a temporary ELF.
