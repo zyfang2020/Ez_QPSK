@@ -77,6 +77,14 @@ localparam integer CARRIER_DRIFT_SAMPLES = 80000;
 `endif
 localparam real PHASE_OFFSET_RAD = PI * PHASE_OFFSET_DEG / 180.0;
 localparam real SYMBOL_STEP = TX_SYMBOL_RATE_HZ / FS_HZ;
+// Late-start mode: keep the ADC at idle DC plus noise until this sample, so the
+// first blind coarse sweep completes on noise and lock must come from the
+// explicit re-acquisition watchdog restarting the sweep.
+`ifdef QPSK_RX_RANDOM_LATE_START
+localparam integer SIGNAL_START_SAMPLE = 600000;
+`else
+localparam integer SIGNAL_START_SAMPLE = 0;
+`endif
 
 reg                       clk;
 reg                       rst_n;
@@ -297,8 +305,12 @@ always @(posedge clk or negedge rst_n) begin
         if (noise_sample >= ADC_NOISE_SPAN) begin
             noise_sample = noise_sample - (2 * ADC_NOISE_SPAN);
         end
-        quantized = (1 << (ADC_DW-1)) + round_real(dc_now +
-                    (amp_now * rf_sample)) + noise_sample;
+        if (sample_count < SIGNAL_START_SAMPLE) begin
+            quantized = (1 << (ADC_DW-1)) + round_real(dc_now) + noise_sample;
+        end else begin
+            quantized = (1 << (ADC_DW-1)) + round_real(dc_now +
+                        (amp_now * rf_sample)) + noise_sample;
+        end
         adc_data <= clip_adc(quantized);
 
 `ifdef QPSK_RX_RANDOM_DRIFT_ENABLED
@@ -457,6 +469,10 @@ initial begin
     #9000000;
 `elsif QPSK_RX_RANDOM_DRIFT
     #9000000;
+`elsif QPSK_RX_RANDOM_LATE_START
+    // Silence + failed first sweep + watchdog wait + re-sweep + lock can take
+    // roughly 22k symbols (~11 ms); allow margin.
+    #20000000;
 `else
     #6000000;
 `endif

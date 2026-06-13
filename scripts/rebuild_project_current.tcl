@@ -39,7 +39,6 @@
 #    "D:/Project/ProjectVivado/Ez_QPSK/RTL/utils/stream_pkt_gen.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/RTL/source/tx_test_pattern.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/RTL/top/pl_comm_top_fixed_cfg.v"
-#    "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_mod_core.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_adc.xdc"
 #    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_dac.xdc"
 #    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_j11_debug.xdc"
@@ -51,7 +50,6 @@
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_impairments.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_external_drift.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_random_external.v"
-#    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_tx_chain_min.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_tx_chain_min.v"
 #    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_rx_chain_min.v"
 #
@@ -81,7 +79,6 @@ proc checkRequiredFiles { origin_dir} {
    "D:/Project/ProjectVivado/Ez_QPSK/RTL/utils/stream_pkt_gen.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/RTL/source/tx_test_pattern.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/RTL/top/pl_comm_top_fixed_cfg.v" \
-   "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_mod_core.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_adc.xdc" \
    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_dac.xdc" \
    "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_j11_debug.xdc" \
@@ -93,7 +90,6 @@ proc checkRequiredFiles { origin_dir} {
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_impairments.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_external_drift.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_random_external.v" \
-   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_tx_chain_min.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_tx_chain_min.v" \
    "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_rx_chain_min.v" \
   ]
@@ -286,7 +282,6 @@ set files [list \
  [file normalize "${origin_dir}/../RTL/utils/stream_pkt_gen.v" ]\
  [file normalize "${origin_dir}/../RTL/source/tx_test_pattern.v" ]\
  [file normalize "${origin_dir}/../RTL/top/pl_comm_top_fixed_cfg.v" ]\
- [file normalize "${origin_dir}/../RTL/modem/qpsk_mod_core.v" ]\
 ]
 set imported_files [import_files -fileset sources_1 $files]
 
@@ -486,18 +481,6 @@ set_property -name "used_in_implementation" -value "1" -objects $file_obj
 set_property -name "used_in_simulation" -value "1" -objects $file_obj
 set_property -name "used_in_synthesis" -value "1" -objects $file_obj
 
-set file "modem/qpsk_mod_core.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-set_property -name "is_enabled" -value "1" -objects $file_obj
-set_property -name "is_global_include" -value "0" -objects $file_obj
-set_property -name "library" -value "xil_defaultlib" -objects $file_obj
-set_property -name "path_mode" -value "RelativeFirst" -objects $file_obj
-set_property -name "used_in" -value "synthesis implementation simulation" -objects $file_obj
-set_property -name "used_in_implementation" -value "1" -objects $file_obj
-set_property -name "used_in_simulation" -value "1" -objects $file_obj
-set_property -name "used_in_synthesis" -value "1" -objects $file_obj
-
 
 # Set 'sources_1' fileset properties
 set obj [get_filesets sources_1]
@@ -616,7 +599,6 @@ set files [list \
  [file normalize "${origin_dir}/../Sim/tb_qpsk_rx_demod_impairments.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_qpsk_rx_demod_external_drift.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_qpsk_rx_demod_random_external.v" ]\
- [file normalize "${origin_dir}/../Sim/tb_qpsk_tx_chain_min.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_tx_chain_min.v" ]\
  [file normalize "${origin_dir}/../Sim/tb_rx_chain_min.v" ]\
 ]
@@ -699,18 +681,6 @@ set_property -name "used_in_simulation" -value "1" -objects $file_obj
 set_property -name "used_in_synthesis" -value "1" -objects $file_obj
 
 set file "Sim/tb_qpsk_rx_demod_random_external.v"
-set file_obj [get_files -of_objects [get_filesets sim_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-set_property -name "is_enabled" -value "1" -objects $file_obj
-set_property -name "is_global_include" -value "0" -objects $file_obj
-set_property -name "library" -value "xil_defaultlib" -objects $file_obj
-set_property -name "path_mode" -value "RelativeFirst" -objects $file_obj
-set_property -name "used_in" -value "synthesis implementation simulation" -objects $file_obj
-set_property -name "used_in_implementation" -value "1" -objects $file_obj
-set_property -name "used_in_simulation" -value "1" -objects $file_obj
-set_property -name "used_in_synthesis" -value "1" -objects $file_obj
-
-set file "Sim/tb_qpsk_tx_chain_min.v"
 set file_obj [get_files -of_objects [get_filesets sim_1] [list "*$file"]]
 set_property -name "file_type" -value "Verilog" -objects $file_obj
 set_property -name "is_enabled" -value "1" -objects $file_obj

@@ -14,7 +14,7 @@
 #   vivado -mode batch -source scripts/run_external_rx_bitstream.tcl -tclargs original_tx_prbs
 #
 # Modes:
-#   external_rx      : AX7020 IO, TX disabled, RX enabled. Legacy/current-board RX.
+#   external_rx      : AX7020 IO, TX disabled, RX enabled. Single-board/current-board RX.
 #   loopback         : AX7020 IO, TX enabled, RX enabled. Local DAC-to-ADC bring-up.
 #   loopback_prbs    : AX7020 IO, TX PRBS7 enabled, RX enabled.
 #   new_interface_rx : new HS IO, TX disabled, RX enabled. Preferred two-board RX.

@@ -2,6 +2,11 @@
 
 本目录放 Vivado/Vitis/板级 bring-up 自动化脚本。除非只做离线分析，建议在工程根目录运行这些命令。
 
+默认工具路径：
+
+- Vivado：`D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat`
+- XSCT：`D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat`
+
 ## 先看这几个入口
 
 - `list_hw_targets.tcl`：只读列出 Vivado Hardware Manager 可见的 JTAG target/device/DNA/ILA，用来确认板子身份。
@@ -31,7 +36,21 @@
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_pl_comm_top_external_rx_sim.tcl
 ```
 
-正/负频偏、宽频偏、锁后漂移分别有 `_neg`、`_wide`、`_drift` 命名的配套脚本。
+常用仿真脚本分组：
+
+- TX 基线：`run_qpsk_tx_single_dac_sim.tcl`
+- RX 本地回环：`run_qpsk_rx_demod_loopback_sim.tcl`
+- RX 扰动/漂移：`run_qpsk_rx_demod_impairments_sim.tcl`、`run_qpsk_rx_demod_external_drift_sim.tcl`
+- RX 随机外部输入：`run_qpsk_rx_demod_random_external_sim.tcl`
+- RX 随机外部输入负频偏：`run_qpsk_rx_demod_random_external_neg_sim.tcl`
+- RX 随机外部输入宽频偏：`run_qpsk_rx_demod_random_external_wide_sim.tcl`、`run_qpsk_rx_demod_random_external_wide_neg_sim.tcl`
+- RX 随机外部输入锁后漂移：`run_qpsk_rx_demod_random_external_drift_sim.tcl`、`run_qpsk_rx_demod_random_external_drift_neg_sim.tcl`
+- RX 信号延迟出现/重捕获：`run_qpsk_rx_demod_late_start_sim.tcl`
+- 顶层 external RX：`run_pl_comm_top_external_rx_sim.tcl`、`run_pl_comm_top_external_rx_neg_sim.tcl`
+- 顶层 external RX 宽频偏：`run_pl_comm_top_external_rx_wide_sim.tcl`、`run_pl_comm_top_external_rx_wide_neg_sim.tcl`
+- 顶层 external RX 锁后漂移：`run_pl_comm_top_external_rx_drift_sim.tcl`、`run_pl_comm_top_external_rx_drift_neg_sim.tcl`
+
+这些脚本会检查 testbench 日志中的 `[PASS]` / `[FAIL]` 标记；失败时返回非零退出码。
 
 ### 3. 生成上板镜像
 
@@ -46,6 +65,16 @@
 ```
 
 `run_second_board_tx_bitstream.tcl` 已弃用并会报错，避免把新 HS 接口误当 TX。
+
+主要产物目录：
+
+- `artifacts/loopback/`：本地 Gray loopback 镜像。
+- `artifacts/loopback_prbs/`：本地 PRBS loopback 压力测试镜像。
+- `artifacts/external_rx/`：单板 external RX 镜像。
+- `artifacts/original_tx_prbs/`：板 A 原 AX7020 风格接口 PRBS TX-only 镜像。
+- `artifacts/original_tx_gray/`：板 A 原 AX7020 风格接口 Gray TX-only 镜像。
+- `artifacts/new_interface_rx/`：板 B 新 HS 接口 RX 镜像。
+- `artifacts/xsa/`：导出的 XSA / 带 bitstream XSA。
 
 当前板卡指纹：
 
@@ -94,8 +123,7 @@ powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mo
 powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode new_interface_rx -Target <rx_target> -NoProgram
 ```
 
-如果物理链路不确定，先用 `-SignalOnly -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5`。若 ADC span/RMS 仍只有个位数，优先查外部输入、RX 模拟链路、ADC 供电/偏置/连接。
-2026-06-12 板 B 验证时，纯 Vivado 烧 PL 后 ILA 不可见；用户在 Vitis 中选择 `Ez_QPSK_new_interface_rx.bit` 并初始化 PS 后，使用 `-NoProgram` 连续三次完整检查通过。
+如果物理链路不确定，先用 `-SignalOnly -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5`。若 ADC span/RMS 仍只有个位数，优先查外部输入、RX 模拟链路、ADC 供电/偏置/连接。若已由 Vitis 烧入接收端 bit 并初始化 PS/FCLK，后续抓取建议加 `-NoProgram`，避免重烧 PL 后丢失当前 PS/FCLK 状态。
 
 ## PS/FCLK 没跑起来的常见原因
 

@@ -14,6 +14,11 @@
 //     and decision-directed phase error after pattern acquisition has timed out.
 //   - A bounded decision-directed Costas-like PI path nudges the DDC NCO while
 //     the coarse blind search checks candidate frequency regions.
+//   - Re-acquisition: after a full coarse sweep applies its best candidate, an
+//     explicit watchdog counts unlocked symbols; if blind lock is not achieved
+//     within REACQ_TIMEOUT_SYMS, the whole coarse sweep restarts. This covers
+//     signals that appear late or disappear after lock, without relying on any
+//     counter wrap-around side effects.
 // -----------------------------------------------------------------------------
 module qpsk_rx_fixed_demod #(
     parameter integer ADC_DW = 10,
@@ -76,6 +81,10 @@ localparam signed [FREQ_CORR_W-1:0] ACQ_FREQ_MAX = 16'sd8192;
 localparam [5:0] ACQ_FREQ_LAST_IDX = 6'd32;
 localparam [8:0] ACQ_FREQ_DWELL_SYMS = 9'd256;
 localparam [15:0] BLIND_ACQ_DELAY_SYMS = 16'd256;
+// Unlocked-wait limit after a completed coarse sweep before the sweep restarts.
+// Must exceed the blind lock ramp (BLIND_LOCK_THRESHOLD symbols plus guard) by
+// a comfortable margin so a correct candidate is never aborted early.
+localparam [10:0] REACQ_TIMEOUT_SYMS = 11'd1024;
 localparam [15:0] BLIND_MIN_ABS = 16'd24;
 localparam [17:0] BLIND_ERR_LIMIT = 18'd256;
 localparam [17:0] BLIND_FINE_ERR_LIMIT = 18'd128;
@@ -106,6 +115,8 @@ reg [3:0] acq_best_phase_bin;
 reg acq_symbol_score_valid;
 reg acq_symbol_score_fine;
 reg acq_apply_best_pending;
+reg blind_delay_done;
+reg [10:0] reacq_timeout_cnt;
 reg [7:0] timing_epoch_cnt;
 reg timing_ready;
 reg [5:0] best_phase;
@@ -253,8 +264,6 @@ wire blind_symbol_confident;
 wire blind_symbol_stable;
 wire blind_symbol_fine;
 wire blind_symbol_transition;
-wire blind_symbol_quality;
-wire blind_symbol_fine_quality;
 wire blind_acq_candidate_ready;
 
 reg signed [12:0] dd_acc_next;
@@ -326,7 +335,7 @@ assign dd_abs_q = abs16(dd_q_now);
 assign dd_min_abs = (dd_abs_i < dd_abs_q) ? dd_abs_i : dd_abs_q;
 assign dd_abs_phase_err = abs18(dd_phase_err);
 assign blind_train_active = timing_ready && (!track_locked) &&
-                            (sym_count >= BLIND_ACQ_DELAY_SYMS);
+                            blind_delay_done;
 assign pattern_track_active = !blind_train_active || track_locked;
 assign decision_track_active = track_locked || blind_locked || blind_train_active;
 assign blind_symbol_confident = (dd_min_abs >= BLIND_MIN_ABS) &&
@@ -337,10 +346,6 @@ assign blind_symbol_fine = blind_symbol_stable &&
                            (dd_abs_phase_err <= BLIND_FINE_ERR_LIMIT);
 assign blind_symbol_transition = blind_prev_sym_valid &&
                                  (dec_sym_done != blind_prev_sym);
-assign blind_symbol_quality = blind_symbol_stable &&
-                              blind_symbol_transition;
-assign blind_symbol_fine_quality = blind_symbol_fine &&
-                                   blind_symbol_transition;
 assign blind_acq_candidate_ready = blind_locked || acq_freq_wrapped;
 
 generate
@@ -355,6 +360,16 @@ generate
         // synopsys translate_off
         initial begin
             $error("qpsk_rx_fixed_demod currently supports NCO_W=12 only, got NCO_W=%0d", NCO_W);
+        end
+        // synopsys translate_on
+    end
+    // The fixed-point truncations in the decision/dd path (dd_i_now, dd_q_now,
+    // dd_phase_step) are only proven overflow-safe for the validated 10-bit
+    // ADC scale chain.
+    if (ADC_DW != 10) begin : g_adc_dw_not_supported
+        // synopsys translate_off
+        initial begin
+            $error("qpsk_rx_fixed_demod currently supports ADC_DW=10 only, got ADC_DW=%0d", ADC_DW);
         end
         // synopsys translate_on
     end
@@ -558,7 +573,7 @@ function signed [PHASE_EST_W-1:0] corr_to_phase_est;
 endfunction
 
 always @(posedge clk) begin
-    if (!rst_n) begin
+    if (!rst_n || !en) begin
         phase_acc        <= {PHASE_W{1'b0}};
         sample_phase     <= 6'd0;
         nco_freq_corr    <= {FREQ_CORR_W{1'b0}};
@@ -572,96 +587,8 @@ always @(posedge clk) begin
         acq_symbol_score_valid <= 1'b0;
         acq_symbol_score_fine <= 1'b0;
         acq_apply_best_pending <= 1'b0;
-        timing_epoch_cnt <= 8'd0;
-        timing_ready     <= 1'b0;
-        best_phase       <= 6'd0;
-        epoch_best_metric <= {TIMING_W{1'b0}};
-        epoch_best_phase  <= 6'd0;
-        metric_d         <= {TIMING_W{1'b0}};
-        phase_d          <= 6'd0;
-        metric_valid_d   <= 1'b0;
-        metric_sum_i     <= {SUM_W{1'b0}};
-        metric_sum_q     <= {SUM_W{1'b0}};
-        metric_phase     <= 6'd0;
-        metric_src_valid <= 1'b0;
-        timing_track_acc <= 5'sd0;
-        timing_early_metric <= {TIMING_W{1'b0}};
-        timing_early_valid <= 1'b0;
-        dc_avg           <= {DC_W{1'b0}};
-        sum_i            <= {SUM_W{1'b0}};
-        sum_q            <= {SUM_W{1'b0}};
-        adc_sample       <= {ADC_DW{1'b0}};
-        sample_valid_q   <= 1'b0;
-        mix_i_d          <= {MIX_W{1'b0}};
-        mix_q_d          <= {MIX_W{1'b0}};
-        mix_valid        <= 1'b0;
-        sym_count        <= 16'd0;
-        best_offset      <= 2'd0;
-        phase_bin        <= 4'd0;
-        lock_score       <= 8'd0;
-        track_locked     <= 1'b0;
-        blind_lock_score <= 8'd0;
-        blind_locked     <= 1'b0;
-        blind_phase_guard <= 5'd0;
-        tracker_state    <= TRACK_IDLE;
-        tracker_idx      <= 5'd0;
-        scan_best_mag    <= {CORR_W{1'b0}};
-        scan_best_offset <= 2'd0;
-        phase_scan_re    <= {PHASE_EST_W{1'b0}};
-        phase_scan_im    <= {PHASE_EST_W{1'b0}};
-        phase_dot_d      <= {PHASE_DOT_W{1'b0}};
-        phase_dot_bin_d  <= 4'd0;
-        phase_dot_valid  <= 1'b0;
-        phase_best_dot   <= {1'b1, {(PHASE_DOT_W-1){1'b0}}};
-        phase_best_bin   <= 4'd0;
-        sym_i_reg        <= {SUM_W{1'b0}};
-        sym_q_reg        <= {SUM_W{1'b0}};
-        rot_exp_sym_req  <= 2'b00;
-        rot_exp_sym_d    <= 2'b00;
-        rot_req_valid    <= 1'b0;
-        rot_i_reg        <= {ROT_W{1'b0}};
-        rot_q_reg        <= {ROT_W{1'b0}};
-        rot_dec_valid    <= 1'b0;
-        corr_i_in_q      <= {CORR_W{1'b0}};
-        corr_q_in_q      <= {CORR_W{1'b0}};
-        corr_sym_base_q  <= 2'b00;
-        corr_update_pending <= 1'b0;
-        dd_phase_acc     <= 13'sd0;
-        dd_nco_step_pending <= 1'b0;
-        dd_nco_step      <= {FREQ_CORR_W{1'b0}};
-        blind_phase_guard_set_pending <= 1'b0;
-        blind_prev_sym    <= 2'b00;
-        blind_prev_sym_valid <= 1'b0;
-        m_sym            <= 2'b00;
-        m_valid          <= 1'b0;
-        m_lock           <= 1'b0;
-        dbg_i            <= 16'sd0;
-        dbg_q            <= 16'sd0;
-        dbg_best_phase   <= 6'd0;
-        dbg_phase_bin    <= 4'd0;
-        dbg_lock_score   <= 8'd0;
-        for (n = 0; n < SPS; n = n + 1) begin
-            hist_i[n] <= {MIX_W{1'b0}};
-            hist_q[n] <= {MIX_W{1'b0}};
-        end
-        for (n = 0; n < 4; n = n + 1) begin
-            corr_i[n] <= {CORR_W{1'b0}};
-            corr_q[n] <= {CORR_W{1'b0}};
-        end
-    end else if (!en) begin
-        phase_acc        <= {PHASE_W{1'b0}};
-        sample_phase     <= 6'd0;
-        nco_freq_corr    <= {FREQ_CORR_W{1'b0}};
-        acq_freq_idx     <= 6'd0;
-        acq_freq_dwell   <= 9'd0;
-        acq_freq_wrapped <= 1'b0;
-        acq_candidate_score <= 10'd0;
-        acq_best_score   <= 10'd0;
-        acq_best_freq    <= {FREQ_CORR_W{1'b0}};
-        acq_best_phase_bin <= 4'd0;
-        acq_symbol_score_valid <= 1'b0;
-        acq_symbol_score_fine <= 1'b0;
-        acq_apply_best_pending <= 1'b0;
+        blind_delay_done <= 1'b0;
+        reacq_timeout_cnt <= 11'd0;
         timing_epoch_cnt <= 8'd0;
         timing_ready     <= 1'b0;
         best_phase       <= 6'd0;
@@ -834,8 +761,10 @@ always @(posedge clk) begin
 
             blind_score_next = blind_lock_score;
             if ((blind_train_active && blind_acq_candidate_ready) || blind_locked) begin
-                if (blind_locked ? blind_symbol_stable :
-                    (acq_freq_wrapped ? blind_symbol_fine : blind_symbol_fine_quality)) begin
+                // When not yet blind-locked this branch is only reachable after
+                // the coarse sweep has wrapped, so the fine-quality gate is the
+                // post-scan blind_symbol_fine path.
+                if (blind_locked ? blind_symbol_stable : blind_symbol_fine) begin
                     if (blind_lock_score != 8'hff) begin
                         blind_score_next = blind_lock_score + 8'd1;
                     end
@@ -891,13 +820,18 @@ always @(posedge clk) begin
             dbg_i   <= rot_i_reg >>> (NCO_W + 4);
             dbg_q   <= rot_q_reg >>> (NCO_W + 4);
             sym_count <= sym_count + 16'd1;
+            // Latch the blind-start delay instead of comparing sym_count
+            // continuously, so the 16-bit symbol counter wrap has no effect on
+            // acquisition state. Re-acquisition is handled only by the explicit
+            // watchdog below.
+            if (sym_count >= BLIND_ACQ_DELAY_SYMS) begin
+                blind_delay_done <= 1'b1;
+            end
 
             if (decision_track_active || pattern_lock_now ||
                 (blind_score_next >= BLIND_LOCK_THRESHOLD)) begin
                 dd_acc_next = dd_phase_acc;
-                if (dd_phase_err > DD_ERR_DEADBAND) begin
-                    dd_acc_next = dd_phase_acc + dd_phase_step;
-                end else if (dd_phase_err < -DD_ERR_DEADBAND) begin
+                if (dd_abs_phase_err > DD_ERR_DEADBAND) begin
                     dd_acc_next = dd_phase_acc + dd_phase_step;
                 end else if (dd_phase_acc > 13'sd0) begin
                     dd_acc_next = dd_phase_acc - 13'sd1;
@@ -939,6 +873,7 @@ always @(posedge clk) begin
                 !acq_freq_wrapped &&
                 !pattern_lock_now &&
                 (blind_lock_score < BLIND_LOCK_THRESHOLD)) begin
+                reacq_timeout_cnt <= 11'd0;
                 if (acq_freq_dwell >= (ACQ_FREQ_DWELL_SYMS - 9'd1)) begin
                     acq_best_score_next = acq_best_score;
                     acq_best_freq_next = acq_best_freq;
@@ -985,6 +920,35 @@ always @(posedge clk) begin
                 blind_phase_guard_set_pending <= 1'b0;
                 blind_phase_guard <= 5'd0;
                 blind_prev_sym_valid <= 1'b0;
+                reacq_timeout_cnt <= 11'd0;
+            end else if (blind_train_active && acq_freq_wrapped) begin
+                // Post-sweep wait state: the best sweep candidate has been
+                // applied but blind lock has not been reached. If lock does not
+                // settle within REACQ_TIMEOUT_SYMS symbols, restart the whole
+                // coarse sweep so late-arriving or re-appearing signals are
+                // re-acquired deterministically.
+                if (reacq_timeout_cnt >= (REACQ_TIMEOUT_SYMS - 11'd1)) begin
+                    reacq_timeout_cnt <= 11'd0;
+                    acq_freq_idx <= 6'd0;
+                    acq_freq_dwell <= 9'd0;
+                    acq_freq_wrapped <= 1'b0;
+                    acq_candidate_score <= 10'd0;
+                    acq_best_score <= 10'd0;
+                    acq_best_freq <= {FREQ_CORR_W{1'b0}};
+                    acq_best_phase_bin <= 4'd0;
+                    acq_symbol_score_valid <= 1'b0;
+                    acq_apply_best_pending <= 1'b0;
+                    nco_freq_corr <= {FREQ_CORR_W{1'b0}};
+                    blind_lock_score <= 8'd0;
+                    blind_phase_guard <= BLIND_PHASE_GUARD_SYMS;
+                    blind_phase_guard_set_pending <= 1'b0;
+                    blind_prev_sym_valid <= 1'b0;
+                    dd_phase_acc <= 13'sd0;
+                    dd_nco_step_pending <= 1'b0;
+                    dd_nco_step <= {FREQ_CORR_W{1'b0}};
+                end else begin
+                    reacq_timeout_cnt <= reacq_timeout_cnt + 11'd1;
+                end
             end else if (!blind_train_active) begin
                 acq_freq_idx <= 6'd0;
                 acq_freq_dwell <= 9'd0;
@@ -1001,6 +965,7 @@ always @(posedge clk) begin
                 nco_freq_corr <= {FREQ_CORR_W{1'b0}};
                 blind_phase_guard <= 5'd0;
                 blind_prev_sym_valid <= 1'b0;
+                reacq_timeout_cnt <= 11'd0;
             end
         end else begin
             m_lock <= track_locked || blind_locked;

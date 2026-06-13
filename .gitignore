@@ -9,6 +9,7 @@
 .Xil/
 *.xpr
 *.xsa
+artifacts/
 
 # ---- Tools temp data ----
 Tool/data
@@ -19,6 +20,7 @@ Vitis_WS/
 
 # ---- Local tooling artifacts ----
 .codex
+.claude
 
 # ---- Reference Documentation ----
 ReferenceDoc/

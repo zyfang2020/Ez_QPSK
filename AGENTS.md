@@ -1,582 +1,104 @@
 # AGENTS.md
 
-## Project Context
+本文件面向 AI/自动化协作者，保存“怎么安全接手这个工程”的规则、当前上下文和避坑经验。项目用户向说明见 `README.md`；脚本用法见 `scripts/README.md`；仿真入口见 `Sim/README.md`；阶段调试时间线见 `RECORD.md`。
 
-- Project: Ez_QPSK on AX7020 / Zynq-7020.
-- Current branch: `Part2`.
-- Current stage-1 baseline:
-  - TX path exists in PL: `qpsk_test_gen -> qpsk_tx_single_dac -> ad9762_driver -> DAC`.
-  - RX path currently captures raw ADC samples and sends them toward AXI DMA.
-  - Current sample clock plan is unchanged: PS `FCLK_CLK0` drives both `clk_axi` and `clk_io`; `pl_comm_top` forwards `clk_io` to `clk_adc` and `clk_dac`.
-- User preference for stage 2:
-  - Do not rework the BD for now.
-  - Do not focus on PS-side software or DMA for this stage.
-  - Add a separate PL-side online demod path from the ADC capture side.
-  - First acceptance target is simulation: local TX loopback can be demodulated in RTL simulation.
-  - Later target is external QPSK input at a fixed carrier frequency.
+## 工作边界
 
-## Git / Branch Discipline
+- 当前工程：Ez_QPSK on AX7020 / Zynq-7020。
+- 当前分支：`Part2`。除非用户明确要求，不要切换、合并、rebase、reset 或修改 `main`。
+- 默认不重画 BD；当前阶段优先保持 PS/BD/DMA 主结构稳定。
+- 当前阶段不把重点放在 PS 侧软件或 DMA 改造上；PL 侧 RX online demod 是并联 debug/验证支路。
+- 生成物默认不入库，除非用户明确要求发布产物。源码、约束、脚本和文档优先。
+- 提交前必须重新确认：
+  - `git status --short --branch`
+  - 分支仍为 `Part2`
+  - 没有把 Vivado/Vitis 生成目录、bitstream、XSA、ILA CSV 等误加进 Git。
 
-- Work only on the current branch `Part2` unless the user explicitly asks for a branch change.
-- Do not switch to, merge into, rebase, reset, or otherwise modify `main` during this stage.
-- It is OK for Codex to create local commits on `Part2` at verified stage milestones when the user asks for checkpoint commits or when a coherent milestone is complete.
-- Before committing:
-  - Re-check `git status --short --branch` and confirm the branch is `Part2`.
-  - Keep generated Vivado/Vitis artifacts out of Git unless the user explicitly asks for release artifacts.
-  - Prefer committing source, constraints, scripts, and documentation needed to reproduce the milestone.
-- Keep commit messages concise and stage-focused, for example `stage2: add qpsk rx demod debug flow`.
+## 当前工程状态
 
-## Stage-2 Goal
+- TX path：`qpsk_test_gen -> qpsk_tx_single_dac -> ad9762_driver -> DAC`。
+- RX raw path：`AD9215 -> ad9215_capture -> stream_async_fifo -> stream_pkt_gen -> axis_to_dma_pkt -> AXI DMA S2MM`。
+- RX demod path：`ad9215_capture -> qpsk_rx_fixed_demod -> rx_demod_sym/valid/lock/debug`。
+- sample clock：PS `FCLK_CLK0` 同时驱动 `clk_axi` 和 `clk_io`；`pl_comm_top` 把 `clk_io` 转发到 `clk_adc` / `clk_dac`。
+- 当前 stage-2 状态：本地 online QPSK 调制解调、PRBS 本地模拟回环、随机外部输入仿真、顶层 external-RX 仿真和两板外部输入 bring-up 均已打通。
+- 当前 demod RTL 已包含：
+  - unsigned ADC centered + DC removal
+  - fixed-frequency DDC
+  - coarse SPS=50 timing phase selection
+  - Gray pattern lock path
+  - blind/random-data lock path
+  - bounded decision-directed Costas-like NCO trim
+  - re-acquisition watchdog for late/missing signal restart
 
-Implement a PL-side QPSK demodulation path while preserving the current TX and BD structure.
+## 关键设计约束
 
-Recommended first milestone:
+- 当前 `qpsk_rx_fixed_demod.v` 验证参数为 `ADC_DW=10`、`SPS=50`、`NCO_W=12`；不要随手泛化这些参数。
+- 固定外部载波频率不等于不需要恢复。真实外部源仍可能有残余频偏、相位偏移、采样钟漂移、幅度变化和符号定时偏移。
+- `external_rx` profile 会关闭本地 TX，只保留外部 ADC 输入与 RX demod。
+- `loopback_prbs` 是本地随机符号压力测试；PRBS 下 Gray-cycle 匹配率低是正常现象。
+- 在线 demod 支路不替代 ADC raw DMA 搬运；后续仍应保留离线交叉验证能力。
 
-1. Tap the RX sample stream after `ad9215_capture`.
-2. Convert ADC unsigned samples to signed centered samples.
-3. Run fixed-frequency DDC using the current carrier NCO increment `24'h11EB85` at 100 MHz.
-4. Add basic recovery/quality logic, not only a same-clock toy decoder:
-   - DC removal or slow average subtraction.
-   - Coarse symbol timing phase selection across `SPS=50`.
-   - Residual phase/decision tracking suitable for fixed-frequency local tests.
-   - Hard QPSK decisions.
-   - Lock/quality metric based on symbol stability or known Gray pattern for the local test mode.
-5. Verify in simulation against the local Gray cycle `00 -> 01 -> 11 -> 10`.
-6. Export two debug pins on J11 later if needed. Tentative mapping:
-   - `rx_demod_bit` on J11 PIN3 / FPGA F17.
-   - `rx_demod_lock` or `rx_demod_valid` on J11 PIN4 / FPGA F16.
+## 板卡与角色
 
-Important design note: a fixed external carrier frequency does not remove the need for recovery. For external transmitters, residual carrier offset, phase offset, sample-clock drift, amplitude variation, and symbol timing offset still require at least a basic carrier/phase loop and timing recovery. Structure the first demod core so it can be upgraded toward a Costas/decision-directed phase loop and Gardner/early-late timing recovery.
+- 板 A：原 AX7020 风格接口板，作为两板链路 TX。Vivado 观测 FPGA DNA：`3A1691221322147B`。
+- 板 B：新 HS 接口板，作为两板链路 RX。Vivado 观测 FPGA DNA：`3A16927471382023`。
+- Digilent cable serial `210512180081` 是下载器/线缆身份，可能随线移动，不能单独区分板卡。
+- 两板模式角色固定为：板 A `original_tx_prbs` / `original_tx_gray` 发射，板 B `new_interface_rx` 接收。
+- `scripts/run_second_board_tx_bitstream.tcl` 已故意弃用并报错，避免把新 HS 接口误当 TX。
+- 两块板同时接 JTAG 时必须显式选择 target/device，不要依赖默认第一个 target。
 
-## Likely Files To Add Or Touch
+## 常用入口
 
-- Add RX demod RTL under `RTL/modem/`, for example:
-  - `qpsk_rx_fixed_demod.v`
-  - small helper modules if useful, but keep the first version simple and reviewable.
-- Touch top-level integration:
-  - `RTL/top/pl_comm_top.v`
-  - `RTL/top/pl_comm_top_fixed_cfg.v`
-- Add simulation:
-  - `Sim/tb_qpsk_rx_demod_loopback.v` or a similarly named stage-2 testbench.
-- Add or update Vivado batch scripts under `scripts/`.
-- Add a J11 constraints file only when pin export is actually integrated.
-
-## Vivado Batch Notes
-
-Vivado version and path:
+仿真：
 
 ```powershell
-& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_tx_single_dac_sim.tcl
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_loopback_sim.tcl
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_qpsk_rx_demod_random_external_sim.tcl
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_pl_comm_top_external_rx_sim.tcl
 ```
 
-Preflight result on 2026-06-09:
-
-- Running the existing batch simulation inside the normal managed sandbox failed during `open_project`.
-- Failure symptom:
-  - `boost::filesystem::remove: 拒绝访问。: "D:\Project\ProjectVivado\Ez_QPSK\.\.hdi.isWriteableTest.<pid>.tmp"`
-  - It left ignored `.hdi.isWriteableTest*.tmp` files in the repo root.
-- Running the same command with escalated/sandbox-external execution succeeded in controlling Vivado:
-  - Vivado opened `Ez_QPSK.xpr`.
-  - IP repositories refreshed.
-  - `sim_1` top was set.
-  - XSim compile/elaborate/simulate launched.
-
-For future automated work, run Vivado batch commands with escalation if the same `.hdi.isWriteableTest` permission failure appears. The command is not a code problem.
-
-## PS / XSA / Vitis Notes
-
-- Because the PL sample clock path depends on PS `FCLK_CLK0`, board bring-up needs PS initialization, not only raw PL bitstream download.
-- A JTAG helper is available to initialize PS clocks before ILA capture:
+bitstream：
 
 ```powershell
-& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl
-```
-
-- Run this after programming PL, or run an equivalent FSBL/application flow, before trying to refresh Vivado ILA/debug hub. If PS `FCLK_CLK0` is not active, Vivado can program the FPGA but may report that the design has no supported debug core or that `dbg_hub` is not detected.
-- With two Zynq boards on JTAG, first run `scripts/init_ps7_fclk.tcl -list`,
-  then pass `-target <xsct_target_id_or_name_pattern>` so PS/FCLK is
-  initialized on the intended TX or RX board.
-- After a PL milestone that affects the exported hardware, refresh the PS-side hardware platform:
-  1. Set the intended board mode. For local analog loopback, use `loopback` (`FIXED_TX_EN=1`, `FIXED_RX_EN=1`, Gray TX). For local PRBS stress testing, use `loopback_prbs` (`FIXED_TX_EN=1`, `FIXED_RX_EN=1`, PRBS7 TX). For a purely external ADC source, use `external_rx` (`FIXED_TX_EN=0`, `FIXED_RX_EN=1`).
-  2. Generate the matching bitstream when the PL image changed.
-  3. Export/update XSA with `scripts/export_current_xsa.tcl`; use `-include-bit` only after the matching implementation bitstream is available.
-  4. Rebuild or refresh the Vitis platform/application from that XSA.
-- A command-line smoke test is available:
-
-```powershell
-& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/test_vitis_xsa_build.tcl artifacts\xsa\Ez_QPSK_external_rx_with_bit.xsa Vitis_WS\codex_xsa_smoke_external_rx_latest
-```
-
-- The smoke test intentionally writes under ignored `Vitis_WS/`, regenerates standalone BSP/FSBL from the XSA, and links `sw/baremetal_dma_rx/main.c` into a temporary ELF.
-- Vitis 2020.2 command-line `app create` / app-template discovery can hang in this environment; the smoke script avoids that path and uses the generated BSP plus ARM GCC directly.
-- The generated standalone BSP should use `ps7_uart_1` for stdin/stdout when UART export is needed.
-- A one-command board check is available for external-RX ILA capture plus decode thresholds:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1
-```
-
-- By default it programs `artifacts/external_rx/Ez_QPSK_external_rx.bit`, captures three ILA CSV files, and runs `Tool/python/decode_rx_demod_ila.py --check-external-rx` on each.
-- For local analog PRBS loopback smoke, use `-Mode loopback_prbs`.
-- For two-board external-link bring-up, keep the board roles explicit:
-  - Original AX7020-style interface: TX side.
-  - New user-provided high-speed interface: RX side.
-  Do not swap these roles. Build the original-interface TX image with:
-
-```powershell
+& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_external_rx_bitstream.tcl -tclargs loopback_prbs
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_original_interface_tx_bitstream.tcl -tclargs prbs
-```
-
-Build the new-interface RX image with:
-
-```powershell
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/run_new_interface_rx_bitstream.tcl
 ```
 
-- The new-interface RX profile switches only ADC/DAC IO constraints:
-  - `Constraints/pl_comm_top_io_second_zynq_hs_dac.xdc`
-  - `Constraints/pl_comm_top_io_second_zynq_hs_adc.xdc`
-  The current `sys_clk_ax7020.xdc` and J11 debug constraints remain as project
-  placeholders until the new board's non-HS clock/reset/debug pins are
-  confirmed. Confirm bank-35 VCCO is compatible with `LVCMOS33` before hardware
-  use.
-- With two JTAG boards connected, do not rely on the default first target.
-  Use the list mode first, then pass `-target` / `-device` to programming or
-  capture scripts:
+JTAG/PS/FCLK：
 
 ```powershell
 & "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/list_hw_targets.tcl
-& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -list
-& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit -ltx artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.ltx -target <tx_target>
-& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <tx_ps_target>
-& "D:\Program_Files\Xilinx\Vivado\2020.2\bin\vivado.bat" -mode batch -source scripts/program_bitstream.tcl -tclargs -bit artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.bit -ltx artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.ltx -target <rx_target>
-& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <rx_ps_target>
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -list
+& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" scripts/init_ps7_fclk.tcl -target <xsct_target>
+```
+
+RX board check：
+
+```powershell
 powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode new_interface_rx -Target <rx_target> -SignalOnly
-```
-- The preferred two-board flow is:
-  1. Program the original AX7020-style interface with `original_tx_prbs`.
-  2. Program the new high-speed interface with `new_interface_rx`.
-  3. Connect original-interface DAC/channel output into the new-interface ADC path.
-  4. Run `check_external_rx_board.ps1 -Mode new_interface_rx -SignalOnly` on the RX board first, then
-     run the full external-RX check once ADC activity is present.
-- Board identity cannot be inferred safely from ADC noise alone. Use Vivado
-  `program_bitstream.tcl -list` and XSCT `init_ps7_fclk.tcl -list`, and if the
-  targets are ambiguous, identify them by plugging one JTAG cable at a time.
-  A random/noise-only RX capture is useful only as an ADC alive/stuck-input
-  preflight; it does not prove that the correct board was selected or that QPSK
-  demodulation will lock.
-- Use `-SignalOnly` as the first real external-source preflight when the physical input path is uncertain. It skips lock/valid requirements and defaults to `MinAdcSpan=16`, so it answers only whether the ADC sees enough input activity before demod lock is expected.
-- The new-interface RX analog/input chain may have an intermittent or broken
-  physical link. If TX/RX targets have been explicitly mapped, both PS/FCLK
-  sides have been initialized, and `new_interface_rx -SignalOnly` still reports
-  `adc_input_state=too_small` / `rx_demod_state=waiting_for_adc_input` with only
-  near-midscale noise, treat this as a likely RX physical-link blocker rather
-  than an RTL demod failure. Pause hardware bring-up and wait for the user to
-  repair/reconnect the RX path before continuing full demod checks.
-- `scripts/wait_external_rx_signal.ps1` can poll the `-SignalOnly` preflight and, with `-RunFullCheck`, automatically run the full external-RX check once ADC input activity passes. Use it while adjusting an external QPSK source:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/wait_external_rx_signal.ps1 -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5
+powershell -ExecutionPolicy Bypass -File scripts/check_external_rx_board.ps1 -Mode new_interface_rx -Target <rx_target> -NoProgram
 ```
 
-- A two-board orchestration helper is available after TX/RX JTAG targets are
-  mapped. It refuses to run programming/checks without explicit target
-  selectors, which helps avoid swapping the original-interface TX and
-  new-interface RX boards:
+详细脚本清单和参数说明放在 `scripts/README.md`。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts/run_two_board_external_link.ps1 -DryRun -TxTarget <tx_hw_target> -RxTarget <rx_hw_target> -TxPsTarget <tx_xsct_target> -RxPsTarget <rx_xsct_target> -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5
-```
+## 避坑记录
 
-  Remove `-DryRun` only after the target mapping has been verified. Without
-  `-RunFullCheck`, the helper runs only the new-interface RX `-SignalOnly`
-  ADC activity preflight. The helper refuses to use the same HW or XSCT target
-  for TX and RX by default; use `-AllowSameHwTarget` / `-AllowSamePsTarget`
-  only when intentionally working with a shared chain and explicitly selected
-  different devices.
+- Vivado 2020.2 在普通托管沙箱里可能因 `.hdi.isWriteableTest*.tmp`、`rundef.js Access denied` 或临时目录权限失败。若命令本身重要且症状明显是权限问题，按执行环境规则用提升权限重跑同一条命令；这通常不是 RTL 或 Tcl 逻辑错误。
+- PL 下载成功不代表 ILA 可用。ILA/debug_hub 时钟来自 PS `FCLK_CLK0`；PS/FCLK 未初始化时可能出现 FPGA DONE 但 `debug_hub` 检测不到。
+- 如果 Vitis 已经烧入 RX bit 并初始化 PS/FCLK，后续 board check 优先加 `-NoProgram`，避免重烧 PL 后丢失当前 PS/FCLK 状态。
+- `download_ps_app.tcl -list` 或 XSCT/XSDB `targets` 为空时，不能假设 PS ELF 已下载或 PS/FCLK 已启动；需要先解决 System Debugger 目标可见性。
+- 板 A 上复刻 Vitis GUI Debug 行为时，Vitis 生成的 `_ide/scripts/debugger_dma_transfer-default.tcl` 可能比独立 XSCT helper 更接近 GUI 流程。注意它必须指向当前匹配的 bitstream。
+- 外部输入链路不确定时，先跑 `-SignalOnly`。若 ADC span/RMS 仍接近空输入，优先查外部源、连接、RX 模拟链路、ADC 供电/偏置，不要先怀疑 demod RTL。
+- 本地模拟回环可能接近 ADC 满量程。若看到 clipping 或 raw span 过大，先降低模拟增益或发射幅度。
+- NCO sign/幅度门限适合真实外部源残余频偏检查；同钟本地 loopback 的 NCO correction 可以合法接近 0，不要默认加 NCO 门限。
+- 如果后续启用新 HS 板非 HS `clk_50M`、reset 或 debug 管脚，需要先确认约束和 Bank VCCO。
 
-- The board check writes per-capture `*_summary.json` files and a multi-capture aggregate JSON. Full checks default to `Tool/data/<mode>_board_check_aggregate_summary.json`; `-SignalOnly` checks default to `Tool/data/<mode>_signal_check_aggregate_summary.json`; override with `-AggregateSummaryJson`.
-- Decoder summaries now include machine-readable `adc_input_state` and `rx_demod_state`. Current useful values include `too_small` / `waiting_for_adc_input` for missing external input and `active` / `locked` for a healthy demod capture. Aggregate JSON includes `adc_input_state_counts` and `rx_demod_state_counts`.
-- The decoder and board check now include coarse ADC spectral diagnostics. Defaults are centered at `7 MHz` with `4 MHz` width; override with Python `--adc-band-center-hz/--adc-band-width-hz` or PowerShell `-AdcBandCenterHz/-AdcBandWidthHz`.
-- Optional ADC spectral gates are available for real external-source checks:
-  - PowerShell: `-MinAdcAcRms <lsb> -MinAdcBandPowerRatio <ratio> -MinAdcPeakHz <hz> -MaxAdcPeakHz <hz>`
-  - Python: `--min-adc-ac-rms <lsb> --min-adc-band-power-ratio <ratio> --min-adc-peak-hz <hz> --max-adc-peak-hz <hz>`
-- For a real external source with known residual carrier direction, the board check and decoder now accept optional NCO gates:
-  - PowerShell: `-ExpectNcoSign positive|negative|nonzero -MinNcoAbs <lsb> -MaxNcoAbs <lsb>`
-  - Python: `--expect-nco-sign positive|negative|nonzero --min-nco-abs <lsb> --max-nco-abs <lsb>`
-  - Do not enable these NCO gates by default for same-clock local loopback; its NCO correction can legitimately stay at zero.
+## 文档职责
 
-## Board Bring-up Preference
-
-- Board identity naming from 2026-06-12:
-  - Board A: original AX7020-style pin/interface board. Use it as the TX side in
-    two-board tests. FPGA DNA observed by Vivado:
-    `3A1691221322147B`.
-  - Board B: new user-provided high-speed pin/interface board. Use it as the RX
-    side in two-board tests. FPGA DNA observed by Vivado:
-    `3A16927471382023`.
-  - The Digilent cable serial observed as `210512180081` can stay the same when
-    the cable is moved between boards, so do not use that serial alone as board
-    identity. Prefer FPGA DNA plus the physical connection.
-- For the next hardware validation step, prefer local analog loopback first:
-  `PL TX -> DAC -> external filter/analog path -> ADC -> PL RX demod`.
-- This requires both DA and AD paths to be working and uses `loopback` mode with TX and RX enabled.
-- Use `loopback_prbs` as the preferred random-symbol stress mode after Gray loopback. Current hardware evidence shows stable PRBS lock on the local analog path.
-- Local analog amplitude note from 2026-06-12:
-  - DAC full-scale output is about `2 Vpp`.
-  - The TX/output chain applies about `11x` gain after the DAC.
-  - The local ADC path sees an attenuated signal of about `1/7` of that
-    post-gain output, and the ADC full-scale input is also about `2 Vpp`.
-  - Therefore a full-scale DAC local loopback could present roughly
-    `2 Vpp * 11 / 7 = 3.1 Vpp` at the ADC input and can saturate or clip the
-    ADC. Treat near-full-scale local-loopback `adc_raw_span` as a gain/headroom
-    warning before blaming demod RTL.
-  - In true external two-board tests, channel attenuation is expected to reduce
-    the RX ADC amplitude, so the local-loopback saturation risk does not imply
-    the external-link signal will also be too large.
-- After local analog loopback is stable, switch to the two-board mode where the
-  original AX7020-style interface transmits PRBS/Gray QPSK and the new high-speed
-  interface receives in `new_interface_rx` mode.
-- 2026-06-11 role correction:
-  - Board A / the original AX7020-style interface is the TX side.
-  - Board B / the new user-provided HS interface is the RX side.
-  - `scripts/run_second_board_tx_bitstream.tcl` is intentionally deprecated and
-    exits with an error to prevent accidentally treating the new interface as TX.
-  - `scripts/run_original_interface_tx_bitstream.tcl -tclargs prbs` generated
-    `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit/.ltx`; timing
-    passed with setup slack `0.326 ns` and hold slack `0.055 ns`.
-  - `scripts/run_new_interface_rx_bitstream.tcl` generated
-    `artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.bit/.ltx`; timing
-    passed with setup slack `0.065 ns` and hold slack `0.043 ns`.
-  - Current Vivado JTAG list saw one target:
-    `localhost:3121/xilinx_tcf/Digilent/210512180081` / `xc7z020_1`.
-    Do not assume TX/RX target identity until both cables are visible or one-at-a-time
-    cable mapping is performed.
-- `scripts/list_hw_targets.tcl` was added as a read-only target identity helper.
-  Current 2026-06-11 observation with one cable connected:
-  - target: `localhost:3121/xilinx_tcf/Digilent/210512180081`
-  - devices: `arm_dap_0`, `xc7z020_1`
-  - `xc7z020_1` part: `xc7z020`
-  - `xc7z020_1` EFUSE DNA: `3A1691221322147B`
-  - Vivado reported DONE status `0` during that listing, so the FPGA was not
-    programmed at the time of enumeration.
-  Treat this as an identity fingerprint, not as TX/RX role proof until the
-  physical board is mapped.
-- 2026-06-12 continuation status:
-  - Vivado still saw only one hardware target:
-    `localhost:3121/xilinx_tcf/Digilent/210512180081`.
-  - `xc7z020_1` was still not programmed, and ILA count was `0`.
-  - Elevated `scripts/init_ps7_fclk.tcl -list` completed but did not list an
-    APU/Cortex-A9 target to initialize.
-  - Two-board programming/check flow was not run. Continue only after both JTAG
-    boards are visible or after one-at-a-time mapping identifies this target as
-    the intended RX board for a single-board RX input preflight.
-- 2026-06-12 single-target RX identity attempt:
-  - The visible target `localhost:3121/xilinx_tcf/Digilent/210512180081` was
-    temporarily programmed with
-    `artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.bit/.ltx`.
-  - Programming reached startup DONE (`End of startup status: HIGH`).
-  - Hardware Manager could not detect `dbg_hub` / ILA after programming:
-    ILA count stayed `0`.
-  - Elevated XSCT `scripts/init_ps7_fclk.tcl -list` still did not list an
-    APU/Cortex-A9 target, so PS/FCLK could not be initialized from this session.
-  - No ADC noise/signal CSV was captured. This attempt does not yet confirm
-    whether serial `210512180081` is the new-interface RX board; it only proves
-    the PL can be programmed and that the PS/FCLK debug clock path is not active
-    or not accessible through XSCT.
-- 2026-06-12 Board B new-interface RX bring-up attempt after the user connected
-  the receiver board:
-  - Vivado `scripts/list_hw_targets.tcl` saw one target
-    `localhost:3121/xilinx_tcf/Digilent/210512180081` / `xc7z020_1`.
-  - The FPGA EFUSE DNA was `3A16927471382023`, confirming this is Board B / the
-    new HS-interface RX board, not Board A.
-  - `scripts/check_external_rx_board.ps1 -Mode new_interface_rx -Target
-    localhost:3121/xilinx_tcf/Digilent/210512180081 -SignalOnly -Repeat 3
-    -WarmupMs 500` programmed
-    `artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.bit` and startup DONE
-    was HIGH.
-  - Vivado could not detect `dbg_hub` / ILA after programming
-    (`hardware ILA cores count: 0`), so no ADC CSV was captured.
-  - Elevated and normal-TEMP-relocated XSCT probes, plus XSDB probes, all
-    returned empty `targets` and `jtag targets`; no APU/Cortex-A9 target was
-    available for `ps7_init` / `ps7_post_config`.
-  - At this point, the blocker was PS/System-Debugger target visibility or PS
-    initialization on Board B. ADC input amplitude and demod lock could not be
-    diagnosed until PS `FCLK_CLK0` was active and ILA capture was possible. A
-    Vitis GUI launch or a board reset/boot-mode/power check was needed to expose
-    or initialize the PS/debug path.
-  - After the user configured/reran the Vitis debug flow with the receiver bit,
-    rerunning the board check with `-NoProgram` detected `1` ILA core and
-    successfully captured Board B. This confirms the earlier ILA failure was a
-    PS/FCLK initialization issue, not a bad `new_interface_rx` bitstream.
-  - `scripts/check_external_rx_board.ps1 -Mode new_interface_rx -Target
-    localhost:3121/xilinx_tcf/Digilent/210512180081 -SignalOnly -NoProgram
-    -Repeat 3 -WarmupMs 500` passed on all three captures:
-    `lock_ratio=1`, `adc_raw_span=337/347/338`,
-    `adc_ac_rms=91.0742/89.4501/91.3749`, and ADC spectral peaks around
-    `7.03/7.32/7.03 MHz`.
-  - Full `new_interface_rx` demod check also passed with `-NoProgram -Repeat 3
-    -WarmupMs 500`:
-    `Tool/data/new_interface_rx_board_check_00..02.csv`, `lock_ratio=1` for all
-    captures, `lock_score=255`, `valid_count=20/20/20`,
-    `adc_raw_span=318/334/356`, `adc_ac_rms=90.7801/90.827/92.6059`, and
-    `adc_spectrum_band_power_ratio=0.995932/0.995022/0.995544`.
-  - For follow-up captures after Vitis has already programmed PL and run PS,
-    prefer `check_external_rx_board.ps1 -Mode new_interface_rx -NoProgram` so the
-    PS/FCLK state is not disturbed.
-- 2026-06-12 PS download clarification:
-  - The previous RX identity attempt only programmed the PL through Vivado; it
-    did not download/run a Vitis PS ELF.
-  - `scripts/download_ps_app.tcl` was added to run `ps7_init`,
-    `ps7_post_config`, download a bare-metal ELF, and continue Cortex-A9.
-  - Elevated `download_ps_app.tcl -list`, direct XSCT `targets`/`jtag targets`,
-    and XSDB `targets`/`jtag targets` all returned no targets, even though
-    Vivado Hardware Manager still listed `arm_dap_0` and `xc7z020_1`.
-  - No PS ELF was downloaded because the System Debugger side did not expose an
-    APU/Cortex-A9 target. Resolve XSCT/XSDB target visibility before expecting
-    PS `FCLK_CLK0`, `dbg_hub`, or ILA capture to work.
-- 2026-06-12 lab single-board RX attempt:
-  - User connected only the new-pin-definition board.
-  - Vivado saw one target on the same Digilent cable serial
-    `210512180081`, but the FPGA DNA was now `3A16927471382023`
-    instead of the earlier `3A1691221322147B`. Treat cable serial as the
-    JTAG adapter identity and DNA as the board/device fingerprint.
-  - The board was programmed with
-    `artifacts/new_interface_rx/Ez_QPSK_new_interface_rx.bit/.ltx`.
-  - Programming succeeded (`End of startup status: HIGH`).
-  - Vivado still could not detect `dbg_hub` / ILA after programming, consistent
-    with inactive PS `FCLK_CLK0`.
-  - Elevated `scripts/download_ps_app.tcl -list` still returned no XSCT
-    APU/Cortex-A9 targets, so the PS ELF could not be downloaded/run yet.
-  - This was later resolved by using Vitis to initialize PS/run the receiver-bit
-    debug configuration, then capturing with `-NoProgram`; see the Board B
-    `new_interface_rx` PASS notes above.
-- 2026-06-12 Board A Vitis debug/batch finding:
-  - The earlier Vitis launch had been pointing at an old `zynq_dma` bitstream.
-    With that old PL image, the PS DMA app could run into a mismatched DMA/BD
-    hardware state and fail around DMA access.
-  - After changing the launch-generated debug Tcl to use
-    `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit`, the Vitis batch
-    style command succeeded:
-
-```powershell
-& "D:\Program_Files\Xilinx\Vitis\2020.2\bin\xsct.bat" -eval "source D:/Project/ProjectVivado/Ez_QPSK/Vitis_WS/Data_Transfer/_ide/scripts/debugger_dma_transfer-default.tcl"
-```
-
-  - This Vitis-generated script performs the fuller GUI-like flow: select APU,
-    system reset, select JTAG cable, `fpga -file`, `loadhw`, `ps7_init`,
-    `ps7_post_config`, download `dma_transfer.elf`, and set a breakpoint at
-    `main`.
-  - After this batch flow, Vivado listed Board A as programmed and detected
-    `1` ILA core. External standalone `download_ps_app.tcl -list` may still
-    print no targets, so prefer the Vitis-generated debug Tcl flow for Board A
-    when reproducing the GUI behavior.
-  - If Vivado warns that probes are not associated, bind:
-    `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.ltx`.
-
-Hardware result on 2026-06-10:
-
-- JTAG detected one Digilent target and `xc7z020_1`.
-- `scripts/run_external_rx_bitstream.tcl -tclargs loopback` generated `artifacts/loopback/Ez_QPSK_loopback.bit` and `.ltx`.
-- Loopback implementation passed timing with setup slack `0.120 ns` and hold slack `0.027 ns`.
-- Programming PL without PS clock initialization reached DONE but Vivado could not detect `dbg_hub`.
-- After running `scripts/init_ps7_fclk.tcl`, Vivado detected one ILA core and captured `Tool/data/loopback_ila.csv`.
-- `Tool/python/decode_rx_demod_ila.py Tool/data/loopback_ila.csv --check-gray-cycle` passed:
-  - `lock_ratio=1`
-  - `valid_count=20`
-  - Gray-cycle best match ratio `1`
-  - `adc_raw_span=794`
-- `scripts/run_external_rx_bitstream.tcl -tclargs loopback_prbs` generated `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.bit` and `.ltx`.
-- `loopback_prbs` implementation passed timing with setup slack `0.150 ns` and hold slack `0.060 ns`.
-- Early PRBS board capture `Tool/data/local_prbs_loopback_ila_00..02.csv` showed ADC span about `886..971`, symbol entropy about `1.87..1.95` bits, and active hard decisions across all symbols, but `lock_ratio=0`; this was useful activity evidence before blind-lock tuning.
-- After blind-lock tuning and powering the ADC rail, `loopback_prbs` was rebuilt:
-  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.bit`
-  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.ltx`
-  - implementation timing passed with setup slack `0.297 ns` and hold slack `0.041 ns`
-- Board captures `Tool/data/local_prbs_loopback_after_adc_power_ila_00..02.csv` decoded with `--check-external-rx` all passed:
-  - `lock_ratio=1`
-  - `lock_score=255`
-  - `valid_count=20/20/21`
-  - symbol entropy `1.88/1.95/1.88` bits
-  - `adc_raw_span=907/892/909`
-  - Gray-cycle match ratio stayed low (`0.40/0.40/0.43`), as expected for PRBS rather than the fixed Gray cycle
-- After timing-pipeline cleanup in `qpsk_rx_fixed_demod.v`, `scripts/run_impl_check.tcl` now resets and rebuilds `synth_1` before `impl_1` so timing is checked against the current RTL, not a stale synthesis netlist.
-- Latest `loopback_prbs` build on 2026-06-11 passed implementation timing with setup slack `0.199 ns` and hold slack `0.042 ns`, and refreshed:
-  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.bit`
-  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.ltx`
-- Latest board captures after ADC power and the timing-clean bitstream also passed:
-  - `Tool/data/local_prbs_loopback_latest_ila_00..02.csv`
-  - `--check-external-rx` PASS for all three captures
-  - `lock_ratio=1`, `lock_score=255`
-  - `valid_count=20/21/20`
-  - `symbol_entropy_when_valid_bits=1.97095/1.9699/1.95272`
-  - `adc_raw_span=948/909/948`
-- Post acquisition transition-gating `loopback_prbs` rebuild on 2026-06-11 also passed implementation timing with setup slack `0.151 ns` and hold slack `0.052 ns`, and refreshed:
-  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.bit`
-  - `artifacts/loopback_prbs/Ez_QPSK_loopback_prbs.ltx`
-- Post-fix local analog PRBS board captures also passed:
-  - `Tool/data/local_prbs_loopback_post_fix_ila_00..02.csv`
-  - `--check-external-rx` PASS for all three captures
-  - `lock_ratio=1`, `lock_score=255`
-  - `valid_count=21/20/21`
-  - `symbol_entropy_when_valid_bits=1.88417/1.98548/1.93871`
-  - `adc_raw_span=964/1000/976`
-  - ADC amplitude is close to full scale; if later captures show clipping, reduce analog gain before evaluating demod failures.
-- 2026-06-12 Board A TX-mode local ADC preflight with
-  `artifacts/original_tx_prbs/Ez_QPSK_original_tx_prbs.bit/.ltx` captured:
-  - `Tool/data/board_a_original_tx_prbs_local_adc_00..02.csv`
-  - ADC input was active with `adc_raw_span=894/965/925`,
-    `adc_ac_rms=234.068/238.398/234.692`, and coarse spectral peaks at about
-    `7.42/7.71/7.52 MHz`.
-  - `lock_ratio=0` is expected for this preflight because the original TX image
-    is used only to confirm Board A DAC/local ADC activity, not to validate RX
-    demod lock.
-- `scripts/run_external_rx_bitstream.tcl -tclargs external_rx` generated `artifacts/external_rx/Ez_QPSK_external_rx.bit` and `.ltx`.
-- `external_rx` implementation passed timing with setup slack `0.007 ns` and hold slack `0.048 ns`; setup is positive but very tight, so later carrier/timing-loop additions need timing attention.
-- `scripts/export_current_xsa.tcl -tclargs -include-bit -out artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa` exported an XSA carrying the matching external-RX bitstream.
-- `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx` passed: Vitis regenerated the standalone BSP/FSBL and linked `sw/baremetal_dma_rx/main.c` into a smoke ELF.
-- Latest `external_rx` rebuild on 2026-06-11 after acquisition transition-gating cleanup passed implementation timing with setup slack `0.169 ns` and hold slack `0.047 ns`, and refreshed:
-  - `artifacts/external_rx/Ez_QPSK_external_rx.bit`
-  - `artifacts/external_rx/Ez_QPSK_external_rx.ltx`
-  - `artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa`
-- `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx_latest` passed for the refreshed XSA after the transition-gating rebuild.
-- After adding lock-after Costas-like PI carrier trim on 2026-06-11, `scripts/run_impl_check.tcl` passed routed timing with setup slack `0.097 ns` and hold slack `0.047 ns`.
-- The matching `external_rx` board image was refreshed with `scripts/run_external_rx_bitstream.tcl -tclargs external_rx`:
-  - implementation/write_bitstream passed with setup slack `0.129 ns` and hold slack `0.047 ns`
-  - refreshed `artifacts/external_rx/Ez_QPSK_external_rx.bit`
-  - refreshed `artifacts/external_rx/Ez_QPSK_external_rx.ltx`
-- The matching XSA was refreshed with `scripts/export_current_xsa.tcl -tclargs -include-bit -out artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa`.
-- `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx_costas` passed for the Costas-like PI external-RX XSA.
-- Latest wide-acquisition `external_rx` rebuild on 2026-06-11 passed implementation/write_bitstream timing with setup slack `0.219 ns` and hold slack `0.042 ns`, and refreshed:
-  - `artifacts/external_rx/Ez_QPSK_external_rx.bit`
-  - `artifacts/external_rx/Ez_QPSK_external_rx.ltx`
-  - `artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa`
-- `scripts/test_vitis_xsa_build.tcl artifacts/xsa/Ez_QPSK_external_rx_with_bit.xsa Vitis_WS/codex_xsa_smoke_external_rx_wide_acq` passed for the refreshed wide-acquisition external-RX XSA.
-- Programming the refreshed `external_rx` image and capturing ILA succeeded, but at that time the ADC input was only near-midscale noise:
-  - `Tool/data/external_rx_latest_ila_00..02.csv`
-  - `adc_raw_span=3/2/2`
-  - `lock_ratio=0`
-  - `i_mean_abs_when_valid` and `q_mean_abs_when_valid` were about `1`
-  - This is expected if no separate external QPSK source is feeding the ADC, because `external_rx` disables local DAC TX.
-- The new one-command board check reproduced the same then-current external-RX condition:
-  - `scripts/check_external_rx_board.ps1 -Repeat 1`
-  - `Tool/data/external_rx_board_check.csv`
-  - `adc_raw_span=3`
-  - `lock_ratio=0`
-  - check failures: `lock_ratio 0 < 0.5`, `adc_raw_span 3 < 16`
-  - This confirmed the blocker at that point was missing/insufficient independent
-    ADC input signal, not the capture/decode flow. Later two-board
-    `new_interface_rx` checks passed after the receiver PS/FCLK was initialized
-    through Vitis.
-- Re-run on 2026-06-11 with `scripts/check_external_rx_board.ps1 -Repeat 1 -WarmupMs 500` still captured/programmed correctly but showed the same external input issue:
-  - `Tool/data/external_rx_board_check.csv`
-  - `adc_raw_span=2`, `adc_ac_rms=0.548365`
-  - `lock_ratio=0`, `valid_count=21`, valid symbols stayed at `3`
-  - check failures: `lock_ratio 0 < 0.5`, `adc_raw_span 2 < 16`
-- Same-board local analog PRBS contrast check on 2026-06-11 passed:
-  - `scripts/check_external_rx_board.ps1 -Mode loopback_prbs -Repeat 1 -WarmupMs 500 -MinAdcAcRms 100 -MinAdcBandPowerRatio 0.8 -MinAdcPeakHz 6000000 -MaxAdcPeakHz 8000000`
-  - `Tool/data/loopback_prbs_board_check.csv`
-  - `lock_ratio=1`, `lock_score=255`, `valid_count=20`
-  - `adc_raw_span=887`, `adc_ac_rms=236.996`
-  - `adc_spectrum_peak_hz=7.61719 MHz`, `adc_spectrum_band_power_ratio=0.986951`
-  - This confirms JTAG, ILA, PS-clocked PL, ADC/DAC local analog path, and RX demod are healthy; true external-RX validation is still waiting on sufficient independent ADC input.
-- `scripts/check_external_rx_board.ps1 -SignalOnly` was added and verified with existing CSVs:
-  - external noise capture fails only the input-presence gate: `adc_raw_span 2 < 16`
-  - loopback PRBS capture passes signal-only spectral gates
-- `scripts/wait_external_rx_signal.ps1` was added and verified:
-  - `-DryRun -MaxAttempts 1 -RunFullCheck` prints the expected signal-only then full-check commands without capturing hardware
-  - existing external noise CSV fails the wait at signal preflight
-  - existing loopback PRBS CSV passes signal preflight and, with `-RunFullCheck`, passes the full demod check
-- Latest current-board `wait_external_rx_signal.ps1 -MaxAttempts 1 -RunFullCheck -MinAdcAcRms 20 -MinAdcBandPowerRatio 0.5` still fails at signal preflight:
-  - `Tool/data/external_rx_signal_check.csv`
-  - `adc_input_state=too_small`, `rx_demod_state=waiting_for_adc_input`
-  - `adc_raw_span=2`, `adc_ac_rms=0.53643`, `adc_spectrum_band_power_ratio=0.0777216`
-  - no full demod check was run, because ADC input presence did not pass
-- `scripts/init_ps7_fclk.tcl` reported no APU/Cortex-A9 target during this run (`AHB AP transaction error`), but Vivado still captured ILA successfully, so the active FCLK/debug path was sufficient for the capture. If this repeats after a board reset, check PS power/reset/boot mode before relying on XSCT PS initialization.
-
-## Simulation Status
-
-`scripts/run_qpsk_tx_single_dac_sim.tcl` was repaired on 2026-06-09:
-
-- `tb_qpsk_tx_single_dac_min` now checks `ad9762_driver` output on the correct negedge-to-posedge alignment.
-- The CSV dump opens `qpsk_single_dac_samples_gray.csv` with a string literal, avoiding the prior invalid file descriptor warning.
-- Failure messages are ASCII error IDs, avoiding garbled fixed-width UTF-8 display.
-- The Tcl script scans `simulate.log`; `[TB_QPSK_TX_DAC][FAIL]` or missing `[TB_QPSK_TX_DAC][PASS]` exits nonzero.
-- Verified command completed with `[TB_QPSK_TX_DAC][PASS]` at beat 50000.
-
-Remaining note: the RTL modules still emit XSim timescale warnings because several source files do not declare a timescale. This is noisy but did not block the repaired simulation.
-
-Stage-2 RX demod status on 2026-06-10/11:
-
-- Random PRBS external-like simulation passed for `+15 kHz` residual carrier offset:
-  - `scripts/run_qpsk_rx_demod_random_external_sim.tcl`
-  - after lock-after Costas-like PI trim, lock near `nco_corr=2560`, final `nco_corr=2450`
-  - `locked_symbols=360`
-- Random PRBS external-like simulation passed for `-15 kHz` residual carrier offset:
-  - `scripts/run_qpsk_rx_demod_random_external_neg_sim.tcl`
-  - after lock-after Costas-like PI trim, lock near `nco_corr=-2560`, final `nco_corr=-2491`
-  - `locked_symbols=360`
-- Gray local loopback regression still passed:
-  - `scripts/run_qpsk_rx_demod_loopback_sim.tcl`
-  - `locked_symbols=160`
-- Top-level external-RX simulation passed:
-  - `scripts/run_pl_comm_top_external_rx_sim.tcl`
-  - `FIXED_TX_EN=0`, `FIXED_RX_EN=1`
-  - local DAC output stayed zero while external ADC PRBS samples demodulated
-  - `locked_symbols=260`, `nco_corr=2560`
-- Re-run on 2026-06-11 after timing-pipeline cleanup also passed:
-  - `locked_symbols=260`, `valid_symbols=7621`, `nco_corr=2560`
-- Re-run on 2026-06-11 after lock-after Costas-like PI carrier trim also passed:
-  - positive offset: `locked_symbols=260`, `valid_symbols=7621`, `nco_corr=2487`
-  - negative offset: `locked_symbols=260`, `valid_symbols=7863`, `nco_corr=-2502`
-- Top-level external-RX negative-offset simulation now passes after requiring acquisition candidates to include stable adjacent-symbol transitions:
-  - `scripts/run_pl_comm_top_external_rx_neg_sim.tcl`
-  - `locked_symbols=260`, `valid_symbols=7863`, `nco_corr=-2560`
-- Latest wide-offset random PRBS simulations passed after expanding the coarse acquisition sweep to `±8192` NCO correction units and changing acquisition scoring to reward fine-quality symbol transitions while penalizing bad transitions:
-  - `scripts/run_qpsk_rx_demod_random_external_wide_sim.tcl`
-  - `+35 kHz`: `locked_symbols=360`, `valid_symbols=9847`, final `nco_corr=6007`
-  - `scripts/run_qpsk_rx_demod_random_external_wide_neg_sim.tcl`
-  - `-35 kHz`: `locked_symbols=360`, `valid_symbols=9628`, final `nco_corr=-5768`
-- Latest post-lock carrier-drift random PRBS simulations passed:
-  - `scripts/run_qpsk_rx_demod_random_external_drift_sim.tcl`
-  - residual carrier drifts from `+15 kHz` to `+35 kHz` after lock
-  - `locked_symbols=3200`, `valid_symbols=12589`, final `nco_corr=5715`
-  - `scripts/run_qpsk_rx_demod_random_external_drift_neg_sim.tcl`
-  - residual carrier drifts from `-15 kHz` to `-35 kHz` after lock
-  - `locked_symbols=3200`, `valid_symbols=12976`, final `nco_corr=-5797`
-- Latest standard random PRBS simulations passed with lock-settle checker hardening:
-  - `scripts/run_qpsk_rx_demod_random_external_sim.tcl`
-  - `+15 kHz`: `locked_symbols=360`, `valid_symbols=9749`, final `nco_corr=2552`
-  - `scripts/run_qpsk_rx_demod_random_external_neg_sim.tcl`
-  - `-15 kHz`: `locked_symbols=360`, `valid_symbols=10136`, final `nco_corr=-2316`
-- Latest top-level external-RX simulations passed with the same lock-settle checker hardening:
-  - `scripts/run_pl_comm_top_external_rx_sim.tcl`
-  - `+15 kHz`: `locked_symbols=260`, `valid_symbols=9413`, final `nco_corr=2515`
-  - `scripts/run_pl_comm_top_external_rx_neg_sim.tcl`
-  - `-15 kHz`: `locked_symbols=260`, `valid_symbols=9807`, final `nco_corr=-2307`
-- Latest top-level external-RX wide-offset simulations passed:
-  - `scripts/run_pl_comm_top_external_rx_wide_sim.tcl`
-  - `+35 kHz`: `locked_symbols=260`, `valid_symbols=9557`, final `nco_corr=5773`
-  - `scripts/run_pl_comm_top_external_rx_wide_neg_sim.tcl`
-  - `-35 kHz`: `locked_symbols=260`, `valid_symbols=9491`, final `nco_corr=-5767`
-- Latest top-level external-RX post-lock carrier-drift simulations passed:
-  - `scripts/run_pl_comm_top_external_rx_drift_sim.tcl`
-  - residual carrier drifts from `+15 kHz` to `+35 kHz` after lock
-  - `locked_symbols=3200`, `valid_symbols=12353`, final `nco_corr=5708`
-  - `scripts/run_pl_comm_top_external_rx_drift_neg_sim.tcl`
-  - residual carrier drifts from `-15 kHz` to `-35 kHz` after lock
-  - `locked_symbols=3200`, `valid_symbols=12747`, final `nco_corr=-5803`
-- The current blind-lock logic is intentionally conservative: it waits longer before blind acquisition, scans coarse NCO correction candidates, suppresses blind score accumulation immediately after phase-bin movement, avoids first-round lock on small coarse-frequency candidates, scores acquisition candidates by transition quality rather than raw transition count, and uses a stricter post-scan fine-quality path before blind lock. This prevents the observed early false lock in random/PRBS tests while preserving the known Gray-cycle path.
-- Open carrier-recovery note: the latest fixed-frequency positive/negative PRBS simulations now include lock-after Costas-like PI NCO fine trim and pass the `±35 kHz` plus post-lock `+15 kHz -> +35 kHz` / `-15 kHz -> -35 kHz` drift simulation stress cases, but this is still not a full Costas/Gardner synchronizer. A future non-data-aided or stronger lock-before frequency estimator plus stronger timing recovery should replace the current coarse acquisition path before claiming broad arbitrary external-transmitter tolerance.
-
-## Suggested Goal-Mode Execution Plan
-
-1. Re-check `git status --short --branch`.
-2. Run a Vivado batch smoke test with escalation if needed.
-3. Use the repaired TX simulation script as a smoke test before adding RX demodulation.
-4. Design the RX demod module with fixed 100 MHz / 7 MHz / `SPS=50` parameters and basic recovery hooks.
-5. Add a focused loopback testbench that validates recovered QPSK symbols.
-6. Run the new simulation in Vivado batch and make the script fail nonzero on `[FAIL]`.
-7. Run synthesis, then implementation/timing if simulation passes.
-8. Export/update XSA and run the Vitis smoke test when the milestone will be used on board.
-9. Update README/Sim/sw docs only with concise stage-2 usage notes.
+- `README.md`：用户向项目入口，保持简洁。
+- `scripts/README.md`：脚本入口、参数和常用流程。
+- `Sim/README.md`：testbench 列表、运行方式和通过判据。
+- `Tool/README.md`：后处理/解码工具说明。
+- `RECORD.md`：阶段性仿真、实现、硬件 bring-up 的时间线记录。
+- `AGENTS.md`：AI 接手规则、当前状态和避坑经验；不要继续写成流水账。
