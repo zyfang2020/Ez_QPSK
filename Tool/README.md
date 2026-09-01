@@ -12,19 +12,6 @@
 - `Tool/matlab/qpsk_uart_capture_demod.m`
 - `Tool/python/uart_capture_qpsk.py`
 - `Tool/python/decode_rx_demod_ila.py`
-- `Tool/python/check_rtl_basics.py`
-
-## 无 Vivado 的基础检查
-
-修改 RTL、约束或工程重建脚本后，可先运行：
-
-```powershell
-python Tool/python/check_rtl_basics.py
-```
-
-该脚本检查 7 MHz NCO 频率字、RRC 定点舍入对称性、RX 输出有效语义、
-TX 回压激励以及 Vivado 重建脚本中的机器相关路径。它不能替代 HDL 仿真、
-综合或时序分析，但可在未安装 Vivado 时提前拦截基础回归。
 
 ## ILA external RX debug 解码
 

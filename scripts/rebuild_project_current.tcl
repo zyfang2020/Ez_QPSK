@@ -62,42 +62,38 @@
 # Check file required for this script exists
 proc checkRequiredFiles { origin_dir} {
   set status true
-  # Keep validation paths relative when possible. Some standalone Windows Tcl
-  # distributions cannot round-trip non-ASCII workspace paths through normalize.
-  set project_root [file join $origin_dir ".."]
   set files [list \
-   "RTL/drivers/ad9215_capture.v" \
-   "RTL/drivers/ad9762_driver.v" \
-   "RTL/drivers/axis_to_dma_pkt.v" \
-   "RTL/modem/iq_nco_upconverter.v" \
-   "RTL/modem/iq_pulse_shaper.v" \
-   "RTL/top/pl_comm_top.v" \
-   "RTL/modem/qpsk_symbol_mapper.v" \
-   "RTL/source/qpsk_test_gen.v" \
-   "RTL/modem/qpsk_tx_single_dac.v" \
-   "RTL/modem/qpsk_rx_fixed_demod.v" \
-   "RTL/utils/reset_sync.v" \
-   "RTL/modem/signed_to_offset_dac.v" \
-   "RTL/buffer/stream_async_fifo.v" \
-   "RTL/utils/stream_pkt_gen.v" \
-   "RTL/source/tx_test_pattern.v" \
-   "RTL/top/pl_comm_top_fixed_cfg.v" \
-   "Constraints/pl_comm_top_io_ax7020_adc.xdc" \
-   "Constraints/pl_comm_top_io_ax7020_dac.xdc" \
-   "Constraints/pl_comm_top_io_ax7020_j11_debug.xdc" \
-   "Constraints/sys_clk_ax7020.xdc" \
-   "Sim/tb_pl_comm_top_fixed_cfg_loopback.v" \
-   "Sim/tb_pl_comm_top_external_rx.v" \
-   "Sim/tb_qpsk_tx_single_dac_min.v" \
-   "Sim/tb_qpsk_rx_demod_loopback.v" \
-   "Sim/tb_qpsk_rx_demod_impairments.v" \
-   "Sim/tb_qpsk_rx_demod_external_drift.v" \
-   "Sim/tb_qpsk_rx_demod_random_external.v" \
-   "Sim/tb_tx_chain_min.v" \
-   "Sim/tb_rx_chain_min.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/drivers/ad9215_capture.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/drivers/ad9762_driver.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/drivers/axis_to_dma_pkt.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/iq_nco_upconverter.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/iq_pulse_shaper.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/top/pl_comm_top.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_symbol_mapper.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/source/qpsk_test_gen.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_tx_single_dac.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_rx_fixed_demod.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/utils/reset_sync.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/signed_to_offset_dac.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/buffer/stream_async_fifo.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/utils/stream_pkt_gen.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/source/tx_test_pattern.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/RTL/top/pl_comm_top_fixed_cfg.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_adc.xdc" \
+   "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_dac.xdc" \
+   "D:/Project/ProjectVivado/Ez_QPSK/Constraints/pl_comm_top_io_ax7020_j11_debug.xdc" \
+   "D:/Project/ProjectVivado/Ez_QPSK/Constraints/sys_clk_ax7020.xdc" \
+   "D:/Project/ProjectVivado/Ez_QPSK/Sim/tb_pl_comm_top_fixed_cfg_loopback.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/Sim/tb_pl_comm_top_external_rx.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_tx_single_dac_min.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_loopback.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_impairments.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_external_drift.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_qpsk_rx_demod_random_external.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_tx_chain_min.v" \
+   "D:/Project/ProjectVivado/Ez_QPSK/sim/tb_rx_chain_min.v" \
   ]
-  foreach relpath $files {
-    set ifile [file join $project_root $relpath]
+  foreach ifile $files {
     if { ![file isfile $ifile] } {
       puts " Could not find local file $ifile "
       set status false
@@ -106,12 +102,8 @@ proc checkRequiredFiles { origin_dir} {
 
   return $status
 }
-# Set the reference directory for source file relative paths. Keep the path in
-# the form supplied by Tcl so standalone Windows Tcl can handle non-ASCII cwd.
-set origin_dir [file dirname [info script]]
-if { $origin_dir eq "" } {
-  set origin_dir "."
-}
+# Set the reference directory for source file relative paths (by default the value is script directory path)
+set origin_dir "."
 
 # Use origin directory path location variable, if specified in the tcl shell
 if { [info exists ::origin_dir_loc] } {
@@ -120,7 +112,6 @@ if { [info exists ::origin_dir_loc] } {
 
 # Set the project name
 set _xil_proj_name_ "Ez_QPSK"
-set validate_only 0
 
 # Use project name variable, if specified in the tcl shell
 if { [info exists ::user_project_name] } {
@@ -142,17 +133,17 @@ proc print_help {} {
   puts "$script_file"
   puts "$script_file -tclargs \[--origin_dir <path>\]"
   puts "$script_file -tclargs \[--project_name <name>\]"
-  puts "$script_file --validate-only"
   puts "$script_file -tclargs \[--help\]\n"
   puts "Usage:"
   puts "Name                   Description"
   puts "-------------------------------------------------------------------------"
-  puts "\[--origin_dir <path>\]  Determine source file paths relative to this path."
-  puts "                       Default is the directory containing this script.\n"
+  puts "\[--origin_dir <path>\]  Determine source file paths wrt this path. Default"
+  puts "                       origin_dir path value is \".\", otherwise, the value"
+  puts "                       that was set with the \"-paths_relative_to\" switch"
+  puts "                       when this script was generated.\n"
   puts "\[--project_name <name>\] Create project with the specified name. Default"
   puts "                       name is the name of the project from where this"
   puts "                       script was generated.\n"
-  puts "\[--validate-only\]      Check required source paths without starting Vivado.\n"
   puts "\[--help\]               Print help information for this script"
   puts "-------------------------------------------------------------------------\n"
   exit 0
@@ -164,7 +155,6 @@ if { $::argc > 0 } {
     switch -regexp -- $option {
       "--origin_dir"   { incr i; set origin_dir [lindex $::argv $i] }
       "--project_name" { incr i; set _xil_proj_name_ [lindex $::argv $i] }
-      "--validate-only" { set validate_only 1 }
       "--help"         { print_help }
       default {
         if { [regexp {^-} $option] } {
@@ -180,21 +170,14 @@ if { $::argc > 0 } {
 set orig_proj_dir "[file normalize "$origin_dir/../"]"
 
 # Check for paths and files needed for project creation
-set validate_required 1
+set validate_required 0
 if { $validate_required } {
   if { [checkRequiredFiles $origin_dir] } {
-    puts "Tcl file $script_file is valid. All files required for project creation are accessible. "
+    puts "Tcl file $script_file is valid. All files required for project creation is accesable. "
   } else {
-    puts "Tcl file $script_file is not valid. Not all files required for project creation are accessible. "
-    if { $validate_only } {
-      exit 1
-    }
+    puts "Tcl file $script_file is not valid. Not all files required for project creation is accesable. "
     return
   }
-}
-if { $validate_only } {
-  puts "Tcl file $script_file required-file validation passed."
-  exit 0
 }
 
 # Create project
@@ -800,28 +783,53 @@ set_property -name "name" -value "utils_1" -objects $obj
 
 
 # Adding sources referenced in BDs, if not already added
-foreach src_rel [list \
-  "RTL/drivers/ad9215_capture.v" \
-  "RTL/drivers/ad9762_driver.v" \
-  "RTL/drivers/axis_to_dma_pkt.v" \
-  "RTL/modem/iq_nco_upconverter.v" \
-  "RTL/modem/iq_pulse_shaper.v" \
-  "RTL/top/pl_comm_top.v" \
-  "RTL/modem/qpsk_symbol_mapper.v" \
-  "RTL/source/qpsk_test_gen.v" \
-  "RTL/modem/qpsk_tx_single_dac.v" \
-  "RTL/modem/qpsk_rx_fixed_demod.v" \
-  "RTL/utils/reset_sync.v" \
-  "RTL/modem/signed_to_offset_dac.v" \
-  "RTL/buffer/stream_async_fifo.v" \
-  "RTL/utils/stream_pkt_gen.v" \
-  "RTL/source/tx_test_pattern.v" \
-  "RTL/top/pl_comm_top_fixed_cfg.v" \
-] {
-  set src_path [file normalize "${origin_dir}/../${src_rel}"]
-  if { [get_files -quiet [file tail $src_rel]] == "" } {
-    import_files -quiet -fileset sources_1 $src_path
-  }
+if { [get_files ad9215_capture.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/drivers/ad9215_capture.v
+}
+if { [get_files ad9762_driver.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/drivers/ad9762_driver.v
+}
+if { [get_files axis_to_dma_pkt.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/drivers/axis_to_dma_pkt.v
+}
+if { [get_files iq_nco_upconverter.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/iq_nco_upconverter.v
+}
+if { [get_files iq_pulse_shaper.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/iq_pulse_shaper.v
+}
+if { [get_files pl_comm_top.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/top/pl_comm_top.v
+}
+if { [get_files qpsk_symbol_mapper.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_symbol_mapper.v
+}
+if { [get_files qpsk_test_gen.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/source/qpsk_test_gen.v
+}
+if { [get_files qpsk_tx_single_dac.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_tx_single_dac.v
+}
+if { [get_files qpsk_rx_fixed_demod.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/qpsk_rx_fixed_demod.v
+}
+if { [get_files reset_sync.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/utils/reset_sync.v
+}
+if { [get_files signed_to_offset_dac.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/modem/signed_to_offset_dac.v
+}
+if { [get_files stream_async_fifo.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/buffer/stream_async_fifo.v
+}
+if { [get_files stream_pkt_gen.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/utils/stream_pkt_gen.v
+}
+if { [get_files tx_test_pattern.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/source/tx_test_pattern.v
+}
+if { [get_files pl_comm_top_fixed_cfg.v] == "" } {
+  import_files -quiet -fileset sources_1 D:/Project/ProjectVivado/Ez_QPSK/RTL/top/pl_comm_top_fixed_cfg.v
 }
 
 
@@ -935,6 +943,7 @@ proc cr_bd_zynq_dma { parentCell } {
 
   # Create ports
   set adc_data [ create_bd_port -dir I -from 9 -to 0 adc_data ]
+  set clk_50M [ create_bd_port -dir I -type clk -freq_hz 50000000 clk_50M ]
   set clk_adc [ create_bd_port -dir O clk_adc ]
   set clk_dac [ create_bd_port -dir O clk_dac ]
   set dac_data [ create_bd_port -dir O -from 11 -to 0 dac_data ]
@@ -1845,6 +1854,7 @@ preplace port DDR -pg 1 -lvl 7 -x 2090 -y 180 -defaultsOSRD
 preplace port FIXED_IO -pg 1 -lvl 7 -x 2090 -y 200 -defaultsOSRD
 preplace port clk_adc -pg 1 -lvl 7 -x 2090 -y 320 -defaultsOSRD
 preplace port clk_dac -pg 1 -lvl 7 -x 2090 -y 480 -defaultsOSRD
+preplace port clk_50M -pg 1 -lvl 0 -x 0 -y 380 -defaultsOSRD
 preplace portBus dac_data -pg 1 -lvl 7 -x 2090 -y 500 -defaultsOSRD
 preplace port rx_demod_bit -pg 1 -lvl 7 -x 2090 -y 600 -defaultsOSRD
 preplace port rx_demod_lock -pg 1 -lvl 7 -x 2090 -y 620 -defaultsOSRD
@@ -1864,6 +1874,7 @@ preplace netloc axi_dma_0_s2mm_introut 1 3 2 1040J 100 1370
 preplace netloc processing_system7_0_FCLK_CLK0 1 0 6 20 60 360 10 690 280 1050 340 1380 340 1840
 preplace netloc processing_system7_0_FCLK_RESET0_N 1 0 6 20 360 NJ 360 NJ 360 NJ 360 NJ 360 1850
 preplace netloc rst_ps7_0_100M_peripheral_aresetn1 1 1 4 370 20 680 290 1060 480 NJ
+preplace netloc clk_50M_1 1 0 6 NJ 380 NJ 380 NJ 380 NJ 380 NJ 380 NJ
 preplace netloc axi_dma_0_M_AXI_S2MM 1 3 1 N 160
 preplace netloc processing_system7_0_FIXED_IO 1 5 2 NJ 200 NJ
 preplace netloc processing_system7_0_DDR 1 5 2 NJ 180 NJ

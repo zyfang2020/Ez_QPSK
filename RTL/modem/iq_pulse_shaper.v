@@ -2224,12 +2224,10 @@ function signed [W-1:0] round_shift_q14;
     input signed [ACC_W-1:0] x;
     reg signed [ACC_W-1:0] xr;
     begin
-        // Arithmetic right shift rounds negative values toward -infinity. Add
-        // half an LSB for both signs, then subtract one accumulator LSB for negative
-        // inputs so the result is symmetric round-to-nearest, ties away from 0.
-        xr = x + ({{(ACC_W-COEF_Q){1'b0}}, 1'b1, {(COEF_Q-1){1'b0}}});
-        if (x < 0) begin
-            xr = xr - {{(ACC_W-1){1'b0}}, 1'b1};
+        if (x >= 0) begin
+            xr = x + ({{(ACC_W-COEF_Q){1'b0}}, 1'b1, {(COEF_Q-1){1'b0}}});
+        end else begin
+            xr = x - ({{(ACC_W-COEF_Q){1'b0}}, 1'b1, {(COEF_Q-1){1'b0}}});
         end
         round_shift_q14 = xr >>> COEF_Q;
     end

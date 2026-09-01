@@ -1,12 +1,32 @@
 # ------------------------------------------------------------------------------
-# Current system clock architecture
+# AX7020 onboard PL clock input
+# Assumption:
+# - The real synthesis top exposes an input port named `clk_50M`
+# - This port is connected to the AX7020 onboard 50 MHz PL oscillator on U18
+# - 100 MHz is generated inside the design by a PLL/MMCM/Clocking Wizard
 # ------------------------------------------------------------------------------
-# The active design does not use an external PL clk_50M input or a PL userrst
-# port. processing_system7_0/FCLK_CLK0 supplies the 100 MHz clk_axi/clk_io clock,
-# and proc_sys_reset derives the associated PL reset.
+
+set_property PACKAGE_PIN U18 [get_ports clk_50M]
+set_property IOSTANDARD LVCMOS33 [get_ports clk_50M]
+
+# The Clocking Wizard IP already provides the input clock timing constraint for
+# this board clock through its scoped XDC. Keep the board-level XDC focused on
+# pin assignment here so implementation does not see a duplicate create_clock
+# and so the file stays valid pure XDC syntax.
 #
-# The PS7 IP contributes the FCLK timing constraints through its generated XDC,
-# so this board-level file intentionally contains no clock or reset pin command.
-# Keep the file in the project because the constraint-selection scripts reference
-# it; add external-clock constraints here only if the BD is explicitly changed to
-# use the AX7020 50 MHz oscillator and a Clocking Wizard/MMCM.
+# If you later remove clk_wiz from the design, add a project-level create_clock
+# for clk_50M in the active top-level constraints instead of using Tcl control
+# flow inside this XDC file.
+
+# ------------------------------------------------------------------------------
+# AX7020 PL user button
+# Assumption:
+# - The top exposes an input port named `userrst`
+# - `userrst` is connected to AX7020 PL user button KEY1 on N15
+# ------------------------------------------------------------------------------
+set_property PACKAGE_PIN N15 [get_ports userrst]
+set_property IOSTANDARD LVCMOS33 [get_ports userrst]
+
+# userrst is a manual asynchronous push-button input. Do not ask STA to model
+# it like a synchronous data input relative to the PL clocks.
+set_false_path -from [get_ports userrst]

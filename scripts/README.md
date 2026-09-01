@@ -19,17 +19,6 @@
 
 ## 常用流程
 
-### 0. 无 Vivado 的源码路径预检
-
-安装了普通 Tcl 解释器时，可以只检查重建脚本引用的 RTL、约束和仿真文件，
-不会创建 Vivado 工程：
-
-```powershell
-tclsh scripts/rebuild_project_current.tcl --validate-only
-```
-
-该检查不验证 Vivado IP Catalog、BD 或综合，仅用于提前发现路径和缺失文件。
-
 ### 1. 枚举 JTAG 板子
 
 ```powershell

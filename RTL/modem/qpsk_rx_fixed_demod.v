@@ -19,8 +19,6 @@
 //     within REACQ_TIMEOUT_SYMS, the whole coarse sweep restarts. This covers
 //     signals that appear late or disappear after lock, without relying on any
 //     counter wrap-around side effects.
-//   - m_valid only qualifies lock-approved output symbols. Internal acquisition
-//     decisions still run before lock but are not exposed as reliable data.
 // -----------------------------------------------------------------------------
 module qpsk_rx_fixed_demod #(
     parameter integer ADC_DW = 10,
@@ -816,8 +814,7 @@ always @(posedge clk) begin
             end
 
             m_sym   <= dec_sym_done;
-            m_valid <= track_locked || pattern_lock_now ||
-                       blind_locked || (blind_score_next >= BLIND_LOCK_THRESHOLD);
+            m_valid <= 1'b1;
             m_lock  <= track_locked || pattern_lock_now ||
                        blind_locked || (blind_score_next >= BLIND_LOCK_THRESHOLD);
             dbg_i   <= rot_i_reg >>> (NCO_W + 4);
